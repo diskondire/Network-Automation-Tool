@@ -926,6 +926,59 @@ class App:
         name=profile.get('name') or profile.get('port') or 'Device'
         return f'{symbol} {name}' + (f' · {host}' if host and host.casefold()!=name.casefold() else '')
 
+    def refresh_recent_captures(self):
+        """Refresh only on demand or after a completed run; do not scan every tick."""
+        if not hasattr(self,'recent_capture_list'):
+            return
+        self._recent_runs=list_capture_runs(BASE/'captures')[:40]
+        self.recent_capture_list.delete(0,'end')
+        for folder,data in self._recent_runs:
+            host=str(data.get('cli_hostname') or data.get('device') or 'Unknown')
+            group=str(data.get('group') or 'Capture')
+            port=str(data.get('com_port') or '?')
+            self.recent_capture_list.insert('end',f'{host[:19]} · {port} · {group[:12]}')
+        self.recent_count.set(f'{len(self._recent_runs)} most recent capture(s)')
+        if not self._recent_runs:
+            self.recent_capture_list.insert('end','No saved captures yet')
+            self.recent_capture_list.configure(state='disabled')
+        else:
+            self.recent_capture_list.configure(state='normal')
+
+    def open_selected_capture(self):
+        """Open the original evidence folder; never mutate saved transcripts."""
+        selected=self.recent_capture_list.curselection()
+        if not selected or selected[0]>=len(self._recent_runs):
+            self.status.set('Select a saved capture first.')
+            return
+        folder,_data=self._recent_runs[selected[0]]
+        try:
+            os.startfile(str(folder))
+        except (OSError,AttributeError) as exc:
+            self.show_error_details('Open capture folder',str(exc),parent=self.root)
+
+    def _refresh_active_status_badge(self, profile, session):
+        """Run status takes precedence; the text also describes connectivity."""
+        pid=profile['id']
+        is_open=bool(session and session.ser)
+        if pid in self.jobs:
+            text='Running commands' if is_open else 'Running · connection lost'
+            color='#FCE3B6'
+        elif pid in self.last_jobs:
+            result=self.last_jobs[pid].get('final_status')
+            if result=='completed':
+                text='Run completed' + (' · connected' if is_open else ' · disconnected')
+                color='#D5F0DB'
+            else:
+                text='Run ' + str(result or 'failed') + (' · connected' if is_open else ' · disconnected')
+                color='#F8D7DA'
+        elif is_open:
+            text='Port open · console connected'
+            color='#D9EAF8'
+        else:
+            text='Not connected'
+            color='#E9EDF1'
+        self.active_status_label.configure(text=text,bg=color,fg='#263E51')
+
     def refresh_profiles(self):
         self.profile_list.delete(0,'end')
         for p in self.profiles:
@@ -948,7 +1001,7 @@ class App:
         session=self.sessions.get(p['id'])
         self.active_port_label.configure(text='Port: '+(p.get('port') or 'Not assigned'))
         self.active_host_label.configure(text='Hostname: '+((session.cli_hostname if session else '') or 'Unknown'))
-        self.active_status_label.configure(text='Status: '+('Port open' if session and session.ser else 'Disconnected'))
+        self._refresh_active_status_badge(p,session)
         for key,var in self.fields.items(): var.set(str(p.get(key,'')))
         self.username.set(''); self.auto.set(False); self.password.set('')
         session=self.get_session()
@@ -1329,6 +1382,7 @@ class App:
         completed_orders={r.get('order') for r in j['results'] if r['result']=='completed'}
         j['final_status']='stopped' if j.get('stop') else ('completed' if len(completed_orders)==len(j['commands']) and not j.get('errors') else 'partial')
         self.write_summary(j)
+        self.refresh_recent_captures()
         if hasattr(self,'jobs'):
             if self.jobs.get(j['profile_id']) is j:self.jobs.pop(j['profile_id'])
             self.last_jobs[j['profile_id']]=j
@@ -1529,7 +1583,7 @@ class App:
                 session=self.get_session()
                 self.active_port_label.configure(text='Port: '+(p.get('port') or 'Not assigned'))
                 self.active_host_label.configure(text='Hostname: '+((session.cli_hostname if session else '') or 'Unknown'))
-                self.active_status_label.configure(text='Status: '+('Port open' if session and session.ser else 'Disconnected'))
+                self._refresh_active_status_badge(p,session)
         self.root.after(100,self.tick)
     def close(self):
         if self.jobs or self.captures:
