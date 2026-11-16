@@ -1,4 +1,5 @@
 ## v7.7.0 preview (unreleased)
+- Fixed the Word export dialog action bar: Export selected captures and Cancel now remain visible at the bottom, with a scrollable capture/template form and screen-height-aware window sizing.
 - Added a classic Windows-style icon ribbon, application logo, Devices/Captures sidebar, per-device status indicator, and actionable home screen.
 - All toolbar shortcuts invoke existing application commands; native menus remain accessible.
 - Icons are generated in Python using Pillow so the source remains editable and self-contained.
