@@ -478,7 +478,7 @@ class App:
         scroll=ttk.Scrollbar(panel,command=text.yview);text.configure(yscrollcommand=scroll.set)
         scroll.pack(side='right',fill='y');text.pack(fill='both',expand=True)
         history=[
-            ('v7.7 preview','Workspace layout, activity bar, clearer command controls and searchable export history. Built from v7.6.4.'),
+            ('v7.7 preview','Icon ribbon, Devices/Captures sidebar, status indicators, guided home screen, activity bar and searchable Word capture history. Built from v7.6.4.'),
             ('v7.6.4','Combined Burn-In inventory rows share one cover page; evidence tables repeat by device; DD-MM-YY timestamps; simplified Windows menu.'),
             ('v7.6.3','Cancel controls and per-device status colors; readable export dates; combined template export per device; Windows-style menu and version history.'),
             ('v7.6.2','Huawei CloudEngine model recognition; screenshots sized to Word table cells.'),
@@ -931,6 +931,7 @@ class App:
         if not hasattr(self,'recent_capture_list'):
             return
         self._recent_runs=list_capture_runs(BASE/'captures')[:40]
+        self.recent_capture_list.configure(state='normal')
         self.recent_capture_list.delete(0,'end')
         for folder,data in self._recent_runs:
             host=str(data.get('cli_hostname') or data.get('device') or 'Unknown')
