@@ -1473,7 +1473,7 @@ class App:
         default_template=BASE/'templates'/'BurnIn-Template.docx'
         template_path=tk.StringVar(value=str(default_template) if default_template.is_file() else '')
         ttk.Label(form,text='Word template (.docx) · optional if not included').pack(anchor='w',padx=12)
-        template_row=ttk.Frame(win);template_row.pack(fill='x',padx=12,pady=(2,6))
+        template_row=ttk.Frame(form);template_row.pack(fill='x',padx=12,pady=(2,6))
         ttk.Entry(template_row,textvariable=template_path).pack(side='left',fill='x',expand=True)
         def choose_template():
             selected=filedialog.askopenfilename(parent=win,title='Choose Word template',
