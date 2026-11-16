@@ -1,0 +1,49 @@
+name: Build portable Windows preview
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '*.py'
+      - 'requirements.txt'
+      - 'command_groups.json'
+      - '.github/workflows/windows-build.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pyinstaller
+      - name: Syntax check
+        shell: pwsh
+        run: |
+          python -m compileall -q console_capture.py core.py discovery.py word_export.py
+      - name: Build one-folder EXE
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean --onedir --windowed --name ConsoleCapture --add-data "command_groups.json;." console_capture.py
+      - name: Package build artifact
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist/ConsoleCapture -DestinationPath ConsoleCapture-Windows-Preview.zip
+          (Get-FileHash ConsoleCapture-Windows-Preview.zip -Algorithm SHA256).Hash.ToLower() + '  ConsoleCapture-Windows-Preview.zip' | Set-Content -Encoding ascii SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ConsoleCapture-Windows-Preview
+          path: |
+            ConsoleCapture-Windows-Preview.zip
+            SHA256SUMS.txt
+          if-no-files-found: error
