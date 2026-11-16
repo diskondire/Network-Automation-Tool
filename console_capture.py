@@ -17,7 +17,7 @@ from serial.tools import list_ports
 from PIL import Image, ImageDraw, ImageFont
 from word_export import export_word
 from capture_catalog import list_capture_runs, matches_capture
-from ui_theme import apply_theme
+from ui_theme import apply_theme, photo_icon, ribbon_button, RIBBON_BG
 from discovery import scan_available_ports, propose_matches, probe_port, candidates_for
 from core import (transcript, prompt_kind, validate_profile, command_text, wrap_output,
                   defaults, new_profile, save_json, safe_name, PAGER, ERROR)
@@ -216,7 +216,11 @@ class App:
         self.root.title("Console Capture v7.7 — UX Preview")
         self.root.geometry("1450x870")
         self.root.minsize(1090, 690)
-        apply_theme(self.root) 
+        apply_theme(self.root)
+        self._visual_icons=[]
+        self._app_icon=photo_icon(self.root,'app',46)
+        self._visual_icons.append(self._app_icon)
+        self.root.iconphoto(True,self._app_icon)
         self.sessions={}; self.jobs={}; self.captures={}; self.last_jobs={}; self.discovery_active=False; self.discovery_queue=Queue()
         config=defaults()
         try:
@@ -254,10 +258,34 @@ class App:
         header=ttk.Frame(self.root,padding=(14,9,14,9))
         header.pack(side='top',fill='x')
         brand=ttk.Frame(header);brand.pack(side='left')
-        ttk.Label(brand,text='Console Capture',style='AppTitle.TLabel').pack(anchor='w')
-        ttk.Label(brand,text='NETWORK OPERATIONS  /  v7.7 PREVIEW',style='AppSubtitle.TLabel').pack(anchor='w')
+        ttk.Label(brand,image=self._app_icon).pack(side='left',padx=(0,10))
+        brand_titles=ttk.Frame(brand);brand_titles.pack(side='left')
+        ttk.Label(brand_titles,text='Console Capture',style='AppTitle.TLabel').pack(anchor='w')
+        ttk.Label(brand_titles,text='NETWORK OPERATIONS  /  v7.7 GRAPHICS PREVIEW',style='AppSubtitle.TLabel').pack(anchor='w')
         self.workspace_summary=tk.StringVar(value='No active connections')
         ttk.Label(header,textvariable=self.workspace_summary,style='Counter.TLabel').pack(side='right',padx=12)
+        ttk.Separator(self.root).pack(side='top',fill='x')
+
+        # A classic Windows icon ribbon. All controls invoke existing actions;
+        # menu entries remain available for keyboard and accessibility workflows.
+        ribbon=tk.Frame(self.root,bg=RIBBON_BG,height=79)
+        ribbon.pack(side='top',fill='x')
+        actions=tk.Frame(ribbon,bg=RIBBON_BG)
+        actions.pack(side='left',padx=12,pady=5)
+        def ribbon_action(label,icon,callback):
+            return ribbon_button(actions,self.root,label,icon,callback,self._visual_icons)
+        def ribbon_divider():
+            tk.Frame(actions,bg='#CAD5DE',width=1,height=49).pack(side='left',padx=7,pady=7)
+        ribbon_action('COM Ports','ports',self.open_com_manager)
+        ribbon_action('Connect','connect',self.connect)
+        ribbon_action('Disconnect','disconnect',self.disconnect)
+        ribbon_divider()
+        ribbon_action('Captures','captures',self.open_captures)
+        ribbon_action('Word Export','word',self.open_word_export)
+        ribbon_divider()
+        ribbon_action('Diagnostics','diagnostics',self.open_diagnostics_window)
+        ribbon_action('Appearance','appearance',self.open_appearance_window)
+        ribbon_action('History','history',self.open_version_history)
         ttk.Separator(self.root).pack(side='top',fill='x')
 
         footer=ttk.Frame(self.root,padding=(12,5,12,6))
@@ -270,7 +298,9 @@ class App:
         ttk.Label(footer,textvariable=self.run_progress_label,style='Counter.TLabel').pack(side='right')
         ttk.Separator(self.root).pack(side='bottom',fill='x')
         body=ttk.Frame(self.root); body.pack(fill='both',expand=True)
-        left=ttk.Frame(body,padding=8); left.pack(side='left',fill='y')
+        left=ttk.Frame(body,padding=8,width=278)
+        left.pack(side='left',fill='y')
+        left.pack_propagate(False)
         center=ttk.Frame(body); center.pack(side='left',fill='both',expand=True)
         # Scrollable right panel prevents lower controls from being hidden on laptop screens.
         right_holder=ttk.Frame(body);right_holder.pack(side='right',fill='y')
@@ -285,21 +315,54 @@ class App:
         right.bind('<Configure>',lambda e:right_canvas.configure(scrollregion=right_canvas.bbox('all')))
         right_canvas.bind('<Configure>',lambda e:right_canvas.itemconfigure(right_window,width=e.width))
 
-        # Operations-first sidebar: select a device and connect without editing its settings.
-        ttk.Label(left,text='CONNECTED DEVICES',style='SectionTitle.TLabel').pack(anchor='w')
+        # Sidebar navigator: live sessions and historical captures are distinct.
+        self.left_tabs=ttk.Notebook(left)
+        self.left_tabs.pack(fill='both',expand=True)
+        devices_page=ttk.Frame(self.left_tabs,padding=6)
+        history_page=ttk.Frame(self.left_tabs,padding=6)
+        device_tab_icon=photo_icon(self.root,'ports',16)
+        capture_tab_icon=photo_icon(self.root,'captures',16)
+        self._visual_icons.extend((device_tab_icon,capture_tab_icon))
+        self.left_tabs.add(devices_page,text='Devices',image=device_tab_icon,compound='left')
+        self.left_tabs.add(history_page,text='Captures',image=capture_tab_icon,compound='left')
+
+        ttk.Label(devices_page,text='LIVE DEVICE SESSIONS',style='SectionTitle.TLabel').pack(anchor='w')
         self.device_count=tk.StringVar(value='No discovered devices')
-        ttk.Label(left,textvariable=self.device_count,style='Counter.TLabel').pack(anchor='w',pady=(3,9))
-        self.profile_list=tk.Listbox(left,height=12,exportselection=False,width=34,selectbackground="#2865a6",selectforeground="white",font=('Segoe UI',10),relief='solid',borderwidth=1)
+        ttk.Label(devices_page,textvariable=self.device_count,style='Counter.TLabel').pack(anchor='w',pady=(3,9))
+        self.profile_list=tk.Listbox(devices_page,height=12,exportselection=False,width=28,
+                                    selectbackground='#2865a6',selectforeground='white',
+                                    font=('Segoe UI',10),relief='solid',borderwidth=1)
         self.profile_list.pack(fill='both',expand=True)
         self.profile_list.bind('<<ListboxSelect>>',self.select_profile)
-        self.active_port_label=ttk.Label(left,text='Port: —')
+        self.active_port_label=ttk.Label(devices_page,text='Port: —')
         self.active_port_label.pack(anchor='w',pady=(9,0))
-        self.active_host_label=ttk.Label(left,text='Hostname: Unknown')
+        self.active_host_label=ttk.Label(devices_page,text='Hostname: Unknown',wraplength=225)
         self.active_host_label.pack(anchor='w')
-        self.active_status_label=ttk.Label(left,text='Status: Not connected')
-        self.active_status_label.pack(anchor='w',pady=(0,9))
-        ttk.Button(left,text='Connect device',command=self.connect,style='Action.TButton').pack(fill='x',pady=(2,4))
-        ttk.Button(left,text='Disconnect device',command=self.disconnect,style='Action.TButton').pack(fill='x')
+        self.active_status_label=tk.Label(devices_page,text='Not connected',anchor='w',
+                                         bg='#E9EDF1',fg='#30495C',padx=9,pady=5,
+                                         font=('Segoe UI',9,'bold'))
+        self.active_status_label.pack(fill='x',pady=(7,10))
+        ttk.Button(devices_page,text='Connect device',command=self.connect,
+                   style='Action.TButton').pack(fill='x',pady=(2,4))
+        ttk.Button(devices_page,text='Disconnect device',command=self.disconnect,
+                   style='Action.TButton').pack(fill='x')
+
+        ttk.Label(history_page,text='SAVED COMMAND EVIDENCE',style='SectionTitle.TLabel').pack(anchor='w')
+        self.recent_count=tk.StringVar(value='No captures')
+        ttk.Label(history_page,textvariable=self.recent_count,
+                  style='Counter.TLabel').pack(anchor='w',pady=(3,9))
+        self.recent_capture_list=tk.Listbox(history_page,height=13,width=27,
+                                            font=('Segoe UI',9),selectbackground='#2865a6',
+                                            selectforeground='white',exportselection=False)
+        self.recent_capture_list.pack(fill='both',expand=True)
+        self.recent_capture_list.bind('<Double-Button-1>',lambda _event:self.open_selected_capture())
+        self._recent_runs=[]
+        ttk.Label(history_page,text='Double-click to open the saved run folder.',
+                  style='Counter.TLabel',wraplength=230).pack(anchor='w',pady=(6,8))
+        ttk.Button(history_page,text='Open selected capture',
+                   command=self.open_selected_capture,style='Action.TButton').pack(fill='x',pady=(0,4))
+        ttk.Button(history_page,text='Refresh list',
+                   command=self.refresh_recent_captures).pack(fill='x')
 
         # Only session-specific fields are retained; no Device Profiles editor.
         self.fields={key:tk.StringVar(value='') for key in ('name','ip','port','baud','parity','stopbits','flow','timeout')}
@@ -312,15 +375,24 @@ class App:
         self.stop_button=None
         self.tabs=ttk.Notebook(center); self.tabs.pack(fill='both',expand=True)
         self.tabs.bind('<<NotebookTabChanged>>',self.tab_changed)
-        # Empty workspace guidance is visible only before a device tab exists.
-        self.empty_state=ttk.Frame(self.tabs,padding=20)
-        self.empty_state.place(relx=0.5,rely=0.44,anchor='center')
-        empty_title=ttk.Label(self.empty_state,text='No console session open',style='SectionTitle.TLabel')
-        empty_title.pack(pady=(0,8))
+        # Actionable empty state, hidden automatically when a terminal is opened.
+        self.empty_state=ttk.Frame(self.tabs,padding=24)
+        self.empty_state.place(relx=0.5,rely=0.43,anchor='center')
+        home_icon=photo_icon(self.root,'terminal',58)
+        self._visual_icons.append(home_icon)
+        ttk.Label(self.empty_state,image=home_icon).pack(pady=(0,10))
+        ttk.Label(self.empty_state,text='Your console workspace',
+                  font=('Segoe UI',15,'bold')).pack(pady=(0,7))
         ttk.Label(self.empty_state,
-                  text='Use Connection → Discover COM Ports to find an adapter, check its response and connect.\n'
-                       'You can then run command sets and save evidence for Word reports.',
-                  justify='center',wraplength=425).pack()
+                  text='Discover a COM port, check its response, and connect to begin.\n'
+                       'Capture CLI evidence and prepare Word reports from the same workspace.',
+                  justify='center',wraplength=430).pack(pady=(0,16))
+        home_actions=ttk.Frame(self.empty_state);home_actions.pack()
+        for label,action in [('Find COM ports',self.open_com_manager),
+                             ('Browse captures',self.open_captures),
+                             ('Word reports',self.open_word_export)]:
+            ttk.Button(home_actions,text=label,command=action,
+                       style='Action.TButton').pack(side='left',padx=5)
         # The terminal Text widget handles keyboard input directly.
         self.status=tk.StringVar(value='Discover COM ports to begin.'); ttk.Label(center,textvariable=self.status,wraplength=650,padding=8).pack(fill='x')
         # Login prompts are handled manually in the terminal until that workflow is redesigned.
@@ -381,7 +453,9 @@ class App:
         # Terminal appearance and connection diagnostics moved to toolbar dialogs.
         self.font_size=tk.StringVar(value='11')
         self.root.protocol('WM_DELETE_WINDOW',self.close)
-        self.refresh_profiles(); self.refresh_groups(); self.refresh_ports(); self.tick()
+        self.refresh_profiles(); self.refresh_groups(); self.refresh_ports()
+        self.refresh_recent_captures()
+        self.tick()
         self.root.after(250,self.open_com_manager)
 
 
