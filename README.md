@@ -2,6 +2,10 @@
 
 ### What's new in this preview
 
+- **Graphics refresh:** a flat icon ribbon for COM Ports, Connect, Disconnect, Captures, Word Export, Diagnostics, Appearance and History.
+- **Sidebar navigator:** Devices and Recent Captures tabs; open an evidence folder by double-clicking a saved run.
+- **Visual identity:** generated application icon, status indicator for the selected device and a home screen with real quick actions.
+- Icons are generated from Python/Pillow geometry; there are no extra image assets or font packs to distribute.
 - Windows-style workspace header and live activity/progress bar.
 - Consolidated task panels for commands, queue, single commands and Word reports.
 - Session list shows discovered hostnames.
