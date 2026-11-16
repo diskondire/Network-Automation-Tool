@@ -1,0 +1,34 @@
+[
+  {
+    "name": "Display WAC",
+    "target": "WAC",
+    "commands": [
+      "display ap all",
+      "display vap all",
+      "display station all"
+    ]
+  },
+  {
+    "name": "Display Switch",
+    "target": "Switch",
+    "commands": [
+      "display interface {interface}",
+      "display poe power interface {interface}"
+    ]
+  },
+  {
+    "name": "Burn In",
+    "target": "Any",
+    "commands": [
+      "display clock",
+      "display version",
+      "display device esn",
+      "display cpu-usage",
+      "display memory all",
+      "display device power system",
+      "display device temperature",
+      "display device fan",
+      "display alarm active"
+    ]
+  }
+]
