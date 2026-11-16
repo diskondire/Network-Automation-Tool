@@ -1,3 +1,18 @@
+> **Development preview:** This branch is an experimental v7.7 operator-interface refresh. The stable v7.6.4 version remains on `main`. Do not deploy the preview to production systems until Windows console-hardware testing passes.
+
+### What's new in this preview
+
+- Windows-style workspace header and live activity/progress bar.
+- Consolidated task panels for commands, queue, single commands and Word reports.
+- Session list shows discovered hostnames.
+- Search saved captures directly in the Word export dialog.
+- Add-on modules `ui_theme.py` and `capture_catalog.py` and Windows CI regression tests.
+- If the optional Burn-In Word template isn't installed locally, standard Word export remains available.
+
+See [v7.7 preview acceptance checklist](docs/UX_REVIEW_V7_7.md) for testing requirements.
+
+---
+
 # Console Capture
 
 **Current version: v7.6.4** · Windows desktop application · Editable Python source
