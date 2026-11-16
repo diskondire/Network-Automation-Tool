@@ -1484,7 +1484,7 @@ class App:
                   wraplength=720).pack(anchor='w',padx=12)
         ttk.Label(form,text='Optional metadata override (single run only):').pack(anchor='w',padx=12,pady=(7,2))
         overrides={key:tk.StringVar(value='') for key in ('DATE','LABELNO','HOSTNAME','SERIALNO','MODELNO','DEVICENAME')}
-        meta_grid=ttk.Frame(win);meta_grid.pack(fill='x',padx=12,pady=(0,7))
+        meta_grid=ttk.Frame(form);meta_grid.pack(fill='x',padx=12,pady=(0,7))
         for i,key in enumerate(overrides):
             cell=ttk.Frame(meta_grid)
             cell.grid(row=i//3,column=i%3,sticky='ew',padx=(0,8),pady=2)
