@@ -1,4 +1,8 @@
 ## v7.7.0 preview (unreleased)
+- Added a classic Windows-style icon ribbon, application logo, Devices/Captures sidebar, per-device status indicator, and actionable home screen.
+- All toolbar shortcuts invoke existing application commands; native menus remain accessible.
+- Icons are generated in Python using Pillow so the source remains editable and self-contained.
+- Added icon-rendering unit tests and recent evidence navigation.
 - Redesigned the operator workspace with an informational device overview and live command-progress bar.
 - Grouped command automation, execution queue, single-command capture, and Word reports into distinct right-side panels.
 - Added detected hostnames to device-session labels.
