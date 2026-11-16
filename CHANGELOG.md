@@ -1,3 +1,12 @@
+## v7.7.0 preview (unreleased)
+- Redesigned the operator workspace with an informational device overview and live command-progress bar.
+- Grouped command automation, execution queue, single-command capture, and Word reports into distinct right-side panels.
+- Added detected hostnames to device-session labels.
+- Made the Word export picker searchable by hostname, port, command set, date and status.
+- Word export gracefully falls back to standard reports when no optional template is bundled.
+- Added unit tests, a Windows Actions verification workflow and an operator acceptance checklist.
+- Preserved v7.6.4 COM probing, command execution, screenshot generation and Word export behavior.
+
 ## v7.6.4
 - Combined Word reports: one inventory table with multiple device rows, repeated evidence tables per device.
 - Date display: DD-MM-YY (HH:MM).
