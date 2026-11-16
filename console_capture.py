@@ -38,6 +38,8 @@ class Session:
         self.cli_hostname = None
         self.frame = ttk.Frame(app.tabs)
         app.tabs.add(self.frame, text=profile['name'])
+        if hasattr(app, 'empty_state'):
+            app.empty_state.place_forget()
         scroll = ttk.Scrollbar(self.frame)
         self.text = tk.Text(self.frame, font=('Consolas',int(app.terminal_font_size.get())), bg='#101820', fg='#daf5e1', wrap='char', state='disabled', yscrollcommand=scroll.set)
         # Disabled for edits, but keyboard events are sent directly over serial.
@@ -310,6 +312,15 @@ class App:
         self.stop_button=None
         self.tabs=ttk.Notebook(center); self.tabs.pack(fill='both',expand=True)
         self.tabs.bind('<<NotebookTabChanged>>',self.tab_changed)
+        # Empty workspace guidance is visible only before a device tab exists.
+        self.empty_state=ttk.Frame(self.tabs,padding=20)
+        self.empty_state.place(relx=0.5,rely=0.44,anchor='center')
+        empty_title=ttk.Label(self.empty_state,text='No console session open',style='SectionTitle.TLabel')
+        empty_title.pack(pady=(0,8))
+        ttk.Label(self.empty_state,
+                  text='Use Connection → Discover COM Ports to find an adapter, check its response and connect.\n'
+                       'You can then run command sets and save evidence for Word reports.',
+                  justify='center',wraplength=425).pack()
         # The terminal Text widget handles keyboard input directly.
         self.status=tk.StringVar(value='Discover COM ports to begin.'); ttk.Label(center,textvariable=self.status,wraplength=650,padding=8).pack(fill='x')
         # Login prompts are handled manually in the terminal until that workflow is redesigned.
