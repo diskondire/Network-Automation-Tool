@@ -1402,18 +1402,49 @@ class App:
         runs=list_capture_runs(root_dir)
         win=tk.Toplevel(self.root)
         win.title('Export Capture Evidence to Word')
-        win.geometry('820x770')
-        win.minsize(650,580)
+        # Respect laptop screen heights and Windows display scaling.
+        height=max(480,min(690,win.winfo_screenheight()-110))
+        win.geometry(f'820x{height}')
+        win.minsize(650,470)
         win.transient(self.root)
-        ttk.Label(win,text='CAPTURE HISTORY',style='SectionTitle.TLabel',padding=(12,12,12,4)).pack(anchor='w')
-        ttk.Label(win,text='Select one or more runs (Ctrl / Shift). Search by hostname, COM port, group, status or date.',padding=(12,0,12,6)).pack(anchor='w')
-        search_box=ttk.Frame(win,padding=(12,3,12,6));search_box.pack(fill='x')
+
+        # Pack the action footer before the scrollable content so it always
+        # reserves visible space, regardless of capture-list or form height.
+        footer=ttk.Frame(win,padding=(12,10,12,10))
+        footer.pack(side='bottom',fill='x')
+        ttk.Separator(win).pack(side='bottom',fill='x')
+
+        content=ttk.Frame(win)
+        content.pack(side='top',fill='both',expand=True)
+        scrollbar=ttk.Scrollbar(content,orient='vertical')
+        scrollbar.pack(side='right',fill='y')
+        canvas=tk.Canvas(content,highlightthickness=0,borderwidth=0,
+                         yscrollcommand=scrollbar.set)
+        canvas.pack(side='left',fill='both',expand=True)
+        scrollbar.configure(command=canvas.yview)
+        form=ttk.Frame(canvas)
+        form_id=canvas.create_window((0,0),window=form,anchor='nw')
+        form.bind('<Configure>',lambda _event:canvas.configure(scrollregion=canvas.bbox('all')))
+        canvas.bind('<Configure>',lambda event:canvas.itemconfigure(form_id,width=event.width))
+
+        def scroll_form(event):
+            if event.delta:
+                canvas.yview_scroll(-int(event.delta/120) or (-1 if event.delta>0 else 1),'units')
+        # Only scroll the form while the pointer is inside non-editable
+        # form areas; the capture list retains its own native wheel behavior.
+        canvas.bind('<MouseWheel>',scroll_form)
+        form.bind('<MouseWheel>',scroll_form)
+        selection_info=tk.StringVar(value='Select a capture to export.')
+        ttk.Label(footer,textvariable=selection_info,style='Counter.TLabel').pack(side='left')
+        ttk.Label(form,text='CAPTURE HISTORY',style='SectionTitle.TLabel',padding=(12,12,12,4)).pack(anchor='w')
+        ttk.Label(form,text='Select one or more runs (Ctrl / Shift). Search by hostname, COM port, group, status or date.',padding=(12,0,12,6)).pack(anchor='w')
+        search_box=ttk.Frame(form,padding=(12,3,12,6));search_box.pack(fill='x')
         ttk.Label(search_box,text='Find captures:').pack(side='left',padx=(0,8))
         query=tk.StringVar(value='')
         ttk.Entry(search_box,textvariable=query).pack(side='left',fill='x',expand=True)
         result_count=tk.StringVar(value='')
-        ttk.Label(win,textvariable=result_count,style='Counter.TLabel',padding=(12,0,12,3)).pack(anchor='w')
-        listing=tk.Listbox(win,selectmode='extended',height=12,exportselection=False,font=('Consolas',10))
+        ttk.Label(form,textvariable=result_count,style='Counter.TLabel',padding=(12,0,12,3)).pack(anchor='w')
+        listing=tk.Listbox(form,selectmode='extended',height=8,exportselection=False,font=('Consolas',10))
         listing.pack(fill='both',expand=True,padx=12)
         visible_indexes=[]
         def refill(*_):
@@ -1428,15 +1459,20 @@ class App:
             elif not runs:
                 listing.insert('end','No saved capture runs found')
                 listing.configure(state='disabled')
+        def update_selection_info(_event=None):
+            selected=len(listing.curselection()) if runs else 0
+            selection_info.set(f'{selected} selected  ·  {len(visible_indexes)} visible capture(s)')
+        listing.bind('<<ListboxSelect>>',update_selection_info)
         query.trace_add('write',refill)
         refill()
+        update_selection_info()
         combined=tk.BooleanVar(value=False)
-        ttk.Radiobutton(win,text='Separate documents — one document per selected run (default)',variable=combined,value=False).pack(anchor='w',padx=12,pady=(10,2))
-        ttk.Radiobutton(win,text='Combined document — one inventory table and evidence tables per device',variable=combined,value=True).pack(anchor='w',padx=12)
-        ttk.Separator(win).pack(fill='x',padx=12,pady=8)
+        ttk.Radiobutton(form,text='Separate documents — one document per selected run (default)',variable=combined,value=False).pack(anchor='w',padx=12,pady=(10,2))
+        ttk.Radiobutton(form,text='Combined document — one inventory table and evidence tables per device',variable=combined,value=True).pack(anchor='w',padx=12)
+        ttk.Separator(form).pack(fill='x',padx=12,pady=8)
         default_template=BASE/'templates'/'BurnIn-Template.docx'
         template_path=tk.StringVar(value=str(default_template) if default_template.is_file() else '')
-        ttk.Label(win,text='Word template (.docx) · optional if not included').pack(anchor='w',padx=12)
+        ttk.Label(form,text='Word template (.docx) · optional if not included').pack(anchor='w',padx=12)
         template_row=ttk.Frame(win);template_row.pack(fill='x',padx=12,pady=(2,6))
         ttk.Entry(template_row,textvariable=template_path).pack(side='left',fill='x',expand=True)
         def choose_template():
@@ -1444,9 +1480,9 @@ class App:
                 filetypes=[('Word document','*.docx')],initialdir=str(BASE/'templates'))
             if selected:template_path.set(selected)
         ttk.Button(template_row,text='Browse...',command=choose_template).pack(side='left',padx=(5,0))
-        ttk.Label(win,text='Fields: DATE, LABELNO, HOSTNAME, SERIALNO, MODELNO, DEVICENAME. Table image markers: DISPLAYCLOCK, DISPLAYVERSION, DISPLAYESN, DISPLAYCPU, DISPLAYMEM, DISPLAYPOWER, DISPLAYTEMP, DISPLAYFAN, DISPLAYALARM.',
+        ttk.Label(form,text='Fields: DATE, LABELNO, HOSTNAME, SERIALNO, MODELNO, DEVICENAME. Table image markers: DISPLAYCLOCK, DISPLAYVERSION, DISPLAYESN, DISPLAYCPU, DISPLAYMEM, DISPLAYPOWER, DISPLAYTEMP, DISPLAYFAN, DISPLAYALARM.',
                   wraplength=720).pack(anchor='w',padx=12)
-        ttk.Label(win,text='Optional metadata override (single run only):').pack(anchor='w',padx=12,pady=(7,2))
+        ttk.Label(form,text='Optional metadata override (single run only):').pack(anchor='w',padx=12,pady=(7,2))
         overrides={key:tk.StringVar(value='') for key in ('DATE','LABELNO','HOSTNAME','SERIALNO','MODELNO','DEVICENAME')}
         meta_grid=ttk.Frame(win);meta_grid.pack(fill='x',padx=12,pady=(0,7))
         for i,key in enumerate(overrides):
@@ -1475,7 +1511,11 @@ class App:
                 messagebox.showinfo('Word export',f"Created {len(files)} Word document(s):\n"+'\n'.join(str(f) for f in files),parent=win)
             except Exception as exc:
                 self.show_error_details('Word export failed',f'{type(exc).__name__}: {exc}',parent=win)
-        ttk.Button(win,text='Export selected',command=export).pack(pady=12)
+        ttk.Button(footer,text='Cancel',command=win.destroy).pack(side='right',padx=(8,0))
+        self.word_export_action=ttk.Button(
+            footer,text='Export selected captures',command=export,
+            style='Primary.Action.TButton')
+        self.word_export_action.pack(side='right')
 
     def open_captures(self):
         folder = BASE / 'captures'
