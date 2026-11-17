@@ -373,7 +373,7 @@ class App:
         ttk.Label(self.empty_state,text='Your console workspace',
                   font=('Segoe UI',15,'bold')).pack(pady=(0,7))
         ttk.Label(self.empty_state,
-                  text='Discover a COM port, check its response, and connect to begin.\n'
+                  text='Discover a COM port or choose SSH, then connect to begin.\n'
                        'Capture CLI evidence and prepare Word reports from the same workspace.',
                   justify='center',wraplength=430).pack(pady=(0,16))
         home_actions=ttk.Frame(self.empty_state);home_actions.pack()
@@ -1942,6 +1942,8 @@ class App:
     def close(self):
         if self.jobs or self.captures:
             messagebox.showinfo('Run in progress','Stop all runs and wait for capture to finish before closing.');return
+        if self.ssh_pending:
+            messagebox.showinfo('SSH connecting','Wait for the SSH connection attempt to complete before closing.');return
         for s in self.sessions.values():s.close()
         self.root.destroy()
 
