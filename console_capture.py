@@ -728,7 +728,7 @@ class App:
         win.title('COM Port Manager — Console Capture')
         win.geometry('960x630');win.minsize(760,480)
         win.protocol('WM_DELETE_WINDOW',win.withdraw)
-        ttk.Label(win,text='Use this to discover and automatically label port connections.',padding=10).pack(anchor='w')
+        ttk.Label(win,text='Discover ports; use Ctrl/Shift to select multiple devices, then Connect Selected.',padding=10).pack(anchor='w')
         top=ttk.Frame(win,padding=(10,4));top.pack(fill='x')
         ttk.Label(top,text='Serial connection speed:').pack(side='left')
         speed=tk.StringVar(value='Auto (detected)')
@@ -754,7 +754,7 @@ class App:
             ttk.Button(editor,text='Apply',command=apply).pack(pady=12)
         ttk.Button(top,text='Edit Serial Settings...',command=edit_serial).pack(side='left')
         columns=('port','hostname','status','description')
-        tree=ttk.Treeview(win,columns=columns,show='tree headings',selectmode='browse')
+        tree=ttk.Treeview(win,columns=columns,show='tree headings',selectmode='extended')
         tree.heading('#0',text='Connection Type');tree.column('#0',width=170,stretch=False)
         for key,label,width in [('port','Port',90),('hostname','Hostname',170),('status','Status',240),('description','Windows Description',260)]:
             tree.heading(key,text=label);tree.column(key,width=width,stretch=key in ('status','description'))
@@ -769,11 +769,10 @@ class App:
         ttk.Label(bottom,textvariable=progress_label).pack(side='left')
         pct=ttk.Label(bottom,text='0%');pct.pack(side='right')
         ttk.Progressbar(win,maximum=100,variable=progress).pack(side='bottom',fill='x',padx=10,pady=(0,6))
+        def selected_ports():
+            return [port for port in tree.selection() if port in self.port_results]
         def selected_port():
-            selection=tree.selection()
-            if not selection:return None
-            value=selection[0]
-            return value if value in self.port_results else None
+            return next(iter(selected_ports()),None)
         def show_selection(event=None):
             port=selected_port()
             if port:
@@ -811,15 +810,24 @@ class App:
             self._scan_ports()
             details.set('Checking ports with bounded Enter retries. Login may be required; no passwords are sent.')
         def connect_port():
-            port=selected_port()
-            if not port:return
-            if not self.port_results[port].get('present'):
-                messagebox.showwarning('COM port','This port is no longer reported by Windows.',parent=win);return
-            try:
-                if self.connect_discovered_port(port,serial_values(port)):
-                    details.set(f'{port} connected. Press Enter in its terminal if a prompt is not displayed.')
-                else:details.set(f'{port}: unable to open port; see connection error details.')
-            except Exception as exc:details.set(f'{port}: {exc}')
+            ports=selected_ports()
+            if not ports:return
+            successes=[];failed=[]
+            for port in ports:
+                if not self.port_results[port].get('present'):
+                    failed.append(port+': not present')
+                    continue
+                try:
+                    if self.connect_discovered_port(port,serial_values(port)):
+                        successes.append(port)
+                    else:
+                        failed.append(port+': could not open')
+                except Exception as exc:
+                    failed.append(port+': '+str(exc))
+            details.set(f'Connected {len(successes)}/{len(ports)} selected port(s).' +
+                        (' Errors: '+'; '.join(failed) if failed else ''))
+            if len(successes)>1:
+                details.set(f'Opened {len(successes)} console tabs. '+('; '.join(failed) if failed else ''))
         def disconnect_port():
             port=selected_port()
             if not port:return
@@ -898,7 +906,7 @@ class App:
                 win.after(120,finish)
         buttons=ttk.Frame(win,padding=(10,4));buttons.pack(fill='x')
         ttk.Button(buttons,text='Discover Ports',command=discover).pack(side='left',padx=3)
-        ttk.Button(buttons,text='Connect',command=connect_port).pack(side='left',padx=3)
+        ttk.Button(buttons,text='Connect Selected (Ctrl/Shift)',command=connect_port).pack(side='left',padx=3)
         ttk.Button(buttons,text='Check Response',command=check_response).pack(side='left',padx=3)
         ttk.Button(buttons,text='Disconnect',command=disconnect_port).pack(side='left',padx=3)
         ttk.Button(buttons,text='Close',command=win.withdraw).pack(side='right',padx=3)
@@ -975,8 +983,26 @@ class App:
             index=next((i for i,p in enumerate(self.profiles) if p['id']==self.selected),0)
             self.profile_list.selection_set(index); self.select_profile()
     def refresh_groups(self):
-        self.group_box['values']=[g['name'] for g in self.groups]
-        if self.group_name.get() not in self.group_box['values']: self.group_name.set(self.groups[0]['name'] if self.groups else '')
+        names=[g['name'] for g in self.groups]
+        self.group_box['values']=names
+        if self.group_name.get() not in names:self.group_name.set(names[0] if names else '')
+        if hasattr(self,'single_group_box'):
+            self.single_group_box['values']=['Single command']+names
+            if self.single_group.get() not in self.single_group_box['values']:
+                self.single_group.set('Single command')
+        self.update_target_visibility()
+
+    def update_target_visibility(self,event=None):
+        if not hasattr(self,'target_frame'):
+            return
+        group=next((g for g in self.groups if g['name']==self.group_name.get()),None)
+        needed=bool(group and any('{interface}' in command for command in group.get('commands',[])))
+        if needed:
+            if not self.target_frame.winfo_manager():
+                self.target_frame.pack(fill='x',before=self.group_box.master,pady=(0,9))
+        elif self.target_frame.winfo_manager():
+            self.target_frame.pack_forget()
+
 
     def get_profile(self): return next(p for p in self.profiles if p['id']==self.selected)
     def get_session(self): return self.sessions.get(self.selected)
@@ -1124,7 +1150,34 @@ class App:
 
     def run_single(self):
         if self.busy(): return
-        self.start('Single command',[self.single.get()])
+        self.start(self.single_group.get() or 'Single command',[self.single.get()])
+
+    def run_single_multiple(self):
+        available=[p for p in self.profiles if p['id'] in self.sessions and
+                   self.sessions[p['id']].ser and p['id'] not in self.jobs]
+        if not available:
+            messagebox.showwarning('Single command','Connect at least one idle device first.')
+            return
+        win=tk.Toplevel(self.root);win.title('Capture one command on multiple devices')
+        win.geometry('470x400')
+        ttk.Label(win,text='Choose devices for this command:',padding=12).pack(anchor='w')
+        options=[]
+        for p in available:
+            value=tk.BooleanVar(value=True)
+            ttk.Checkbutton(win,text=p['name']+' ('+p['port']+')',variable=value).pack(anchor='w',padx=18,pady=3)
+            options.append((p['id'],value))
+        def launch():
+            try:
+                name=self.single_group.get() or 'Single command'
+                command=self.single.get()
+                prepared=[self.prepare_run(pid,name,[command]) for pid,var in options if var.get()]
+                if not prepared:
+                    messagebox.showwarning('Single command','Select at least one device.',parent=win);return
+                win.destroy()
+                self.launch_runs(prepared)
+            except Exception as exc:
+                self.show_error_details('Single-command capture',str(exc),parent=win)
+        ttk.Button(win,text='Run and capture selected',command=launch).pack(pady=12)
 
     def run_multiple(self):
         """Launch independent runs; existing runs on other devices are unaffected."""
