@@ -1,4 +1,27 @@
-> **Alpha development branch:** Current version is **0.7.7.0-alpha.2**. The working stable release remains on `main`. This update is not approved for production serial hardware yet.
+# Console Capture — v0.7.8.0 SSH Alpha
+
+**Based on v0.7.7 on `main`. Adds SSH terminal sessions alongside existing Windows serial COM ports.** This update intentionally does not include the unstable v0.8 USB build or abandoned v0.9 HTML prototype.
+
+## New in v0.7.8
+
+- **SSH toolbar button:** Open an interactive SSH terminal with hostname/IP, port (default 22), username and password.
+- **Verified host keys:** Unknown or changed SSH host keys are rejected; first verify the key independently and add it to your user's `~/.ssh/known_hosts` via Windows OpenSSH.
+- **Existing workflows:** SSH terminal tabs use the same command groups, single commands, multi-device capture, evidence PNG/TXT/BIN output and Word reports as serial sessions.
+- **Asynchronous SSH connections:** Authentication runs on a worker thread so the window does not freeze while connecting.
+- **No saved passwords:** SSH credentials are requested for each connection and never written to profiles or configuration files.
+- **Serial remains unchanged:** COM Ports discovery, connecting and manual console operation continue to work.
+
+See [SSH connection guide](docs/SSH_CONNECTIONS.md).
+
+### Windows setup
+
+Run `START.bat`. It checks for Python 3.10+ and creates a virtual environment if required. A network connection may be needed on first run to install `paramiko` and its dependencies; unlike v0.8 this branch has **no bundled offline Python installer**.
+
+**Alpha warning:** Live SSH access, Huawei CLI compatibility and Word export should be verified on real equipment. Never trust an unknown host key without independent verification.
+
+---
+
+> **Historical v0.7.7 notes:** The following sections describe the previous UI alpha, retained for context.
 
 ## Operator changes in this alpha
 
