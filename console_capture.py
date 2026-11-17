@@ -70,7 +70,7 @@ class Session:
         device_id = getattr(self, 'profile', {}).get('id')
         busy = (device_id in jobs if jobs is not None else bool(getattr(self.app, 'job', None) or getattr(self.app, 'capture', None)))
         if busy:
-            self.app.status.set('This device is running a command group; manual input is disabled.')
+            self.app.status.set('Capture running on this device; wait for completion before manual input.')
             return 'break'
         keys = {
             'Return': b'\r', 'KP_Enter': b'\r', 'BackSpace': b'\x08',
@@ -1575,50 +1575,87 @@ class App:
         messagebox.showinfo(f'Command Preview - {name}', preview)
 
     def edit_groups(self):
-        if self.busy():return
-        win=tk.Toplevel(self.root);win.title('Command sets');win.geometry('650x580');win.transient(self.root);win.grab_set()
-        picker=ttk.Combobox(win,values=[g['name'] for g in self.groups],state='readonly');picker.pack(fill='x',padx=12,pady=8)
-        name=tk.StringVar();target=tk.StringVar(value='WAC')
-        ttk.Label(win,text='Group name').pack(anchor='w',padx=12);ttk.Entry(win,textvariable=name).pack(fill='x',padx=12)
-        ttk.Label(win,text='Universal group (runs on selected device; commands still validated)').pack(anchor='w',padx=12)
-        listing=tk.Listbox(win,exportselection=False);listing.pack(fill='both',expand=True,padx=12,pady=8)
-        entry=ttk.Entry(win);entry.pack(fill='x',padx=12)
+        """Edit one command per line, directly in the large editor.
+
+        This dialog is deliberately non-modal: device terminal tabs stay
+        interactive while command sets are being reviewed or edited.
+        """
+        win=tk.Toplevel(self.root)
+        win.title('Command Set Editor')
+        win.geometry('780x640')
+        win.minsize(590,430)
+        win.transient(self.root)
+        panel=ttk.Frame(win,padding=12)
+        panel.pack(fill='both',expand=True)
+        ttk.Label(panel,text='COMMAND SET EDITOR',style='SectionTitle.TLabel').pack(anchor='w')
+        ttk.Label(panel,text='Select a set or create a new one. Edit commands directly below: one command per line.').pack(anchor='w',pady=(4,10))
+        picker=ttk.Combobox(panel,values=[g['name'] for g in self.groups],state='readonly')
+        picker.pack(fill='x',pady=(0,10))
+        ttk.Label(panel,text='Set name').pack(anchor='w')
+        name=tk.StringVar()
+        ttk.Entry(panel,textvariable=name).pack(fill='x',pady=(3,9))
+        ttk.Label(panel,text='Commands  ·  one per line').pack(anchor='w')
+        body=ttk.Frame(panel);body.pack(fill='both',expand=True,pady=(4,8))
+        scrollbar=ttk.Scrollbar(body)
+        scrollbar.pack(side='right',fill='y')
+        editor=tk.Text(body,font=('Consolas',11),undo=True,wrap='none',
+                       yscrollcommand=scrollbar.set,tabs=('28c',))
+        editor.pack(side='left',fill='both',expand=True)
+        scrollbar.configure(command=editor.yview)
+        ttk.Label(panel,text='Tip: Huawei filters may use patterns such as | i (Serial|Model). Commands run individually, in order.',
+                  wraplength=700).pack(anchor='w',pady=(0,10))
         editing={'name':None}
         def load(event=None):
-            g=next(g for g in self.groups if g['name']==picker.get());editing['name']=g['name'];name.set(g['name']);target.set(g.get('target','WAC'));listing.delete(0,'end')
-            for c in g['commands']:listing.insert('end',c)
+            group=next((g for g in self.groups if g['name']==picker.get()),None)
+            if not group:return
+            editing['name']=group['name']
+            name.set(group['name'])
+            editor.delete('1.0','end')
+            editor.insert('1.0','\n'.join(group['commands']))
         picker.bind('<<ComboboxSelected>>',load)
-        def select(event=None):
-            sel=listing.curselection()
-            if sel:entry.delete(0,'end');entry.insert(0,listing.get(sel[0]))
-        listing.bind('<<ListboxSelect>>',select)
-        def modify(action):
-            sel=listing.curselection();i=sel[0] if sel else None
-            if action in ('add','edit'):
-                value=entry.get().strip()
-                try:command_text(value,{'interface':'MultiGE 1/0/1'})
-                except ValueError as exc:messagebox.showerror('Command',str(exc),parent=win);return
-                if action=='add':listing.insert('end',value)
-                elif i is not None:listing.delete(i);listing.insert(i,value)
-            elif i is not None:
-                if action=='remove':listing.delete(i)
-                else:
-                    new=i+(-1 if action=='up' else 1)
-                    if 0<=new<listing.size():value=listing.get(i);listing.delete(i);listing.insert(new,value);listing.selection_set(new)
-        row=ttk.Frame(win);row.pack(pady=4)
-        for label,action in [('Add','add'),('Edit','edit'),('Remove','remove'),('Up','up'),('Down','down')]:ttk.Button(row,text=label,command=lambda a=action:modify(a)).pack(side='left')
-        def new():editing['name']=None;picker.set('');name.set('');listing.delete(0,'end');entry.delete(0,'end')
-        def save():
-            title=name.get().strip();commands=list(listing.get(0,'end'))
-            if not title or not commands:messagebox.showerror('Group','Enter a name and at least one command.',parent=win);return
-            if any(g['name']==title and g['name']!=editing['name'] for g in self.groups):messagebox.showerror('Group','Name already exists.',parent=win);return
-            self.groups=[g for g in self.groups if g['name']!=editing['name']];self.groups.append(dict(name=title,target='Any',commands=commands));self.persist();self.refresh_groups();win.destroy()
-        def delete():
-            if editing['name'] and messagebox.askyesno('Delete','Delete this group?',parent=win):
-                self.groups=[g for g in self.groups if g['name']!=editing['name']];self.persist();self.refresh_groups();win.destroy()
-        row=ttk.Frame(win);row.pack(pady=8)
-        for label,fn in [('New group',new),('Save group',save),('Delete group',delete)]:ttk.Button(row,text=label,command=fn).pack(side='left',padx=4)
-        if self.groups:picker.current(0);load()
+        def new_group():
+            editing['name']=None
+            picker.set('')
+            name.set('')
+            editor.delete('1.0','end')
+            editor.focus_set()
+        def save_group():
+            title=name.get().strip()
+            commands=[line.strip() for line in editor.get('1.0','end-1c').splitlines() if line.strip()]
+            if not title or not commands:
+                messagebox.showwarning('Command sets','Provide a name and at least one command.',parent=win)
+                return
+            if any(g['name']==title and g['name']!=editing['name'] for g in self.groups):
+                messagebox.showerror('Command sets','This name already exists.',parent=win)
+                return
+            try:
+                for command in commands:
+                    command_text(command,{'interface':'MultiGE 1/0/1'})
+            except ValueError as exc:
+                messagebox.showerror('Command sets',str(exc),parent=win)
+                return
+            self.groups=[g for g in self.groups if g['name']!=editing['name']]
+            self.groups.append({'name':title,'target':'Any','commands':commands})
+            self.persist()
+            self.refresh_groups()
+            win.destroy()
+        def delete_group():
+            if editing['name'] and messagebox.askyesno('Delete command set',
+                    'Delete '+editing['name']+'?',parent=win):
+                self.groups=[g for g in self.groups if g['name']!=editing['name']]
+                self.persist()
+                self.refresh_groups()
+                win.destroy()
+        row=ttk.Frame(panel);row.pack(fill='x')
+        ttk.Button(row,text='New set',command=new_group).pack(side='left')
+        ttk.Button(row,text='Delete set',command=delete_group).pack(side='left',padx=8)
+        ttk.Button(row,text='Close',command=win.destroy).pack(side='right')
+        ttk.Button(row,text='Save changes',command=save_group,
+                   style='Primary.Action.TButton').pack(side='right',padx=(0,8))
+        if self.groups:
+            picker.current(0)
+            load()
+
     def tick(self):
         for s in list(self.sessions.values()):s.poll()
         jobs=list(getattr(self,'jobs',{}).values()) if hasattr(self,'jobs') else ([self.job] if self.job else [])
