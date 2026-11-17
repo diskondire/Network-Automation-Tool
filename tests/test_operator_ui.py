@@ -51,6 +51,44 @@ class OperatorUITests(unittest.TestCase):
         self.assertTrue(controls)
         editor.destroy()
 
+    def test_command_set_actions_are_pinned_and_editable(self):
+        self.app.edit_groups()
+        windows = [child for child in self.app.root.winfo_children()
+                   if isinstance(child, tk.Toplevel)]
+        dialog = next(win for win in windows if win.title() == 'Command Set Editor')
+        dialog.geometry('650x470+60+60')
+        dialog.update_idletasks()
+
+        def walk(parent):
+            for child in parent.winfo_children():
+                yield child
+                yield from walk(child)
+
+        buttons = [widget for widget in walk(dialog)
+                   if isinstance(widget, ttk.Button)]
+        labels = {widget.cget('text'): widget for widget in buttons}
+        for label in ('Add new set', 'Delete set', 'Save changes',
+                      '+ Add command', 'Edit command', 'Remove line', 'Close'):
+            self.assertIn(label, labels)
+            self.assertTrue(labels[label].cget('command'))
+        save = labels['Save changes']
+        self.assertIs(save.master.master, dialog,
+                      'Save changes must be attached to a permanent footer')
+        self.assertEqual(save.winfo_manager(), 'pack')
+        self.assertGreater(save.winfo_height(), 0)
+        self.assertLessEqual(save.winfo_rooty()+save.winfo_height(),
+                             dialog.winfo_rooty()+dialog.winfo_height()+2)
+
+        text_widgets = [widget for widget in walk(dialog)
+                        if isinstance(widget, tk.Text)]
+        self.assertEqual(len(text_widgets), 1)
+        editor = text_widgets[0]
+        editor.delete('1.0', 'end')
+        labels['+ Add command'].invoke()
+        editor.insert('insert', 'display version')
+        self.assertIn('display version', editor.get('1.0', 'end'))
+        dialog.destroy()
+
     def test_com_manager_supports_extended_selection(self):
         self.app.open_com_manager()
         manager = self.app.com_manager
