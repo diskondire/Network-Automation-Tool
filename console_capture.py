@@ -1132,7 +1132,7 @@ class App:
 
     def _apply_widget_palette(self,root,palette):
         """Apply colors to classic Tk controls which ttk themes don't manage."""
-        for widget in [root]+self._widget_descendants(root):
+        for widget in [root]+list(self._widget_descendants(root)):
             try:
                 if isinstance(widget,tk.Listbox):
                     widget.configure(bg=palette['input'],fg=palette['fg'],
