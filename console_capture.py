@@ -234,26 +234,6 @@ class App:
         if not any(g.get('name','').casefold()=='burn in' for g in self.groups):
             self.groups.append({'name': 'Burn In', 'target': 'Any', 'commands': ['display clock', 'display version', 'display device esn', 'display cpu-usage', 'display memory all', 'display device power system', 'display device temperature', 'display device fan', 'display alarm active']})
         self.selected=None
-        # Native Windows menu: one location for application utilities.
-        menu=tk.Menu(self.root)
-        file_menu=tk.Menu(menu,tearoff=False)
-        file_menu.add_command(label='Export Capture Evidence to Word...',command=self.open_word_export)
-        file_menu.add_command(label='Open Captures Folder',command=self.open_captures)
-        file_menu.add_separator()
-        file_menu.add_command(label='Exit',command=self.close)
-        menu.add_cascade(label='File',menu=file_menu)
-        connection_menu=tk.Menu(menu,tearoff=False)
-        connection_menu.add_command(label='Discover COM Ports...',command=self.open_com_manager)
-        connection_menu.add_command(label='Connection Diagnostics...',command=self.open_diagnostics_window)
-        menu.add_cascade(label='Connection',menu=connection_menu)
-        view_menu=tk.Menu(menu,tearoff=False)
-        view_menu.add_command(label='Terminal Appearance...',command=self.open_appearance_window)
-        menu.add_cascade(label='View',menu=view_menu)
-        help_menu=tk.Menu(menu,tearoff=False)
-        help_menu.add_command(label='Version History...',command=self.open_version_history)
-        help_menu.add_command(label='About Console Capture...',command=lambda:messagebox.showinfo('About Console Capture','Console Capture v7.7 — UX Preview\nBuilt on stable v7.6.4. Network console automation and Word evidence export.',parent=self.root))
-        menu.add_cascade(label='Help',menu=help_menu)
-        self.root.config(menu=menu)
         # A compact informational header, not a second row of duplicate buttons.
         header=ttk.Frame(self.root,padding=(14,9,14,9))
         header.pack(side='top',fill='x')
@@ -266,8 +246,7 @@ class App:
         ttk.Label(header,textvariable=self.workspace_summary,style='Counter.TLabel').pack(side='right',padx=12)
         ttk.Separator(self.root).pack(side='top',fill='x')
 
-        # A classic Windows icon ribbon. All controls invoke existing actions;
-        # menu entries remain available for keyboard and accessibility workflows.
+        # Windows-style icon ribbon: main navigation and common actions.
         ribbon=tk.Frame(self.root,bg=RIBBON_BG,height=79)
         ribbon.pack(side='top',fill='x')
         actions=tk.Frame(ribbon,bg=RIBBON_BG)
@@ -404,9 +383,9 @@ class App:
 
         # Interface is a command parameter, NOT a connection setting.
         # Editable per device; required only by commands containing {interface}.
-        target_frame=ttk.LabelFrame(right,text='TARGET INTERFACE · OPTIONAL',padding=8)
-        target_frame.pack(fill='x',pady=(0,10))
-        ttk.Label(target_frame,text='Used only when a command contains {interface}.',wraplength=305).pack(anchor='w')
+        target_frame=ttk.LabelFrame(right,text='PORT-SPECIFIC COMMANDS',padding=8)
+        self.target_frame=target_frame
+        ttk.Label(target_frame,text='Only commands containing {interface} use this port name.',wraplength=305).pack(anchor='w')
         self.interface_box=ttk.Combobox(
             target_frame,textvariable=self.fields['interface'],width=29,
             values=['MultiGE 1/0/1','GigabitEthernet 0/0/1','XGigabitEthernet 0/0/1',
@@ -415,7 +394,7 @@ class App:
         self.interface_box.bind('<<ComboboxSelected>>',self.apply_interface)
         self.interface_box.bind('<FocusOut>',self.apply_interface)
         self.interface_box.bind('<Return>',self.apply_interface)
-        ttk.Label(target_frame,text='Editable for each device; no Apply button or reconnect needed.',wraplength=305).pack(anchor='w')
+        ttk.Label(target_frame,text='Choose a physical port, e.g. MultiGE 1/0/1. No reconnect required.',wraplength=305).pack(anchor='w')
 
         # Clear task-oriented command workspace; vendor command sets remain editable.
         commands_panel=ttk.LabelFrame(right,text='COMMAND AUTOMATION',padding=9,style='Report.TLabelframe')
@@ -424,6 +403,7 @@ class App:
         self.group_name=tk.StringVar()
         self.group_box=ttk.Combobox(commands_panel,textvariable=self.group_name,state='readonly',width=27)
         self.group_box.pack(fill='x',pady=(4,7))
+        self.group_box.bind('<<ComboboxSelected>>',self.update_target_visibility)
         editor_row=ttk.Frame(commands_panel);editor_row.pack(fill='x',pady=(0,7))
         ttk.Button(editor_row,text='Manage sets',command=self.edit_groups).pack(side='left',fill='x',expand=True,padx=(0,3))
         ttk.Button(editor_row,text='Preview',command=self.preview_command_group).pack(side='left',fill='x',expand=True,padx=(3,0))
@@ -444,7 +424,12 @@ class App:
         self.single=tk.StringVar(value='display version')
         self.single_entry=ttk.Entry(single_panel,textvariable=self.single,width=28)
         self.single_entry.pack(fill='x',pady=(0,6))
-        ttk.Button(single_panel,text='Run and capture',command=self.run_single,style='Action.TButton').pack(fill='x')
+        ttk.Label(single_panel,text='Save capture under command set',style='Counter.TLabel').pack(anchor='w')
+        self.single_group=tk.StringVar(value='Single command')
+        self.single_group_box=ttk.Combobox(single_panel,textvariable=self.single_group,state='readonly')
+        self.single_group_box.pack(fill='x',pady=(4,6))
+        ttk.Button(single_panel,text='Capture on selected device',command=self.run_single,style='Action.TButton').pack(fill='x')
+        ttk.Button(single_panel,text='Capture on multiple devices...',command=self.run_single_multiple).pack(fill='x',pady=(5,0))
 
         export_panel=ttk.LabelFrame(right,text='WORD REPORTS',padding=9,style='Report.TLabelframe')
         export_panel.pack(fill='x',pady=(0,8))
