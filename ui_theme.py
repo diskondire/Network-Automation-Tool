@@ -182,7 +182,9 @@ def ribbon_button(parent, master, text, icon_name, command, icon_refs):
         bd=0, highlightthickness=0, padx=2, pady=4,
         font=('Segoe UI', 9), cursor='hand2',
     )
-    button.bind('<Enter>', lambda _event: button.configure(bg=RIBBON_HOVER))
-    button.bind('<Leave>', lambda _event: button.configure(bg=RIBBON_BG))
+    button._ribbon_background = RIBBON_BG
+    button._ribbon_hover = RIBBON_HOVER
+    button.bind('<Enter>', lambda _event: button.configure(bg=button._ribbon_hover))
+    button.bind('<Leave>', lambda _event: button.configure(bg=button._ribbon_background))
     button.pack(side='left', padx=2)
     return button
