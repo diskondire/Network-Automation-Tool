@@ -89,6 +89,28 @@ class OperatorUITests(unittest.TestCase):
         self.assertIn('display version', editor.get('1.0', 'end'))
         dialog.destroy()
 
+    def test_dark_mode_switch_and_persistence(self):
+        self.app.dark_mode.set('dark')
+        self.app.toggle_dark_mode()
+        self.assertEqual(self.app.dark_mode.get(), 'dark')
+        preference = Path(self.directory.name) / 'ui_settings.json'
+        self.assertTrue(preference.exists())
+        self.assertIn('"dark"', preference.read_text(encoding='utf-8'))
+        self.app.dark_mode.set('light')
+        self.app.toggle_dark_mode()
+        self.assertIn('"light"', preference.read_text(encoding='utf-8'))
+
+    def test_cursor_marker_is_visual_only(self):
+        profile = {'id': 'test-session', 'name': 'COM TEST', 'port': 'COM89'}
+        session = console_capture.Session(self.app, profile)
+        self.app.sessions[profile['id']] = session
+        session.raw.extend(b'<SAMPLE-SW01>')
+        session.redraw()
+        self.assertEqual(session.visible, '<SAMPLE-SW01>')
+        self.assertTrue(session.text.get('1.0', 'end-1c').endswith('\N{LEFT HALF BLOCK}'),
+                        'Expected display-only cursor at the CLI prompt')
+        self.assertNotIn('\N{LEFT HALF BLOCK}', session.visible)
+
     def test_com_manager_supports_extended_selection(self):
         self.app.open_com_manager()
         manager = self.app.com_manager
