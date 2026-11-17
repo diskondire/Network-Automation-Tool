@@ -128,6 +128,11 @@ class Session:
         else: self.text.yview_moveto(scroll_position[0])
     def poll(self):
         if not self.ser: return
+        if not self.ser.is_open:
+            self.last_error='Connection closed by device.'
+            self.close()
+            self.status=self.last_error
+            return
         try:
             data = self.ser.read(min(self.ser.in_waiting,65536))
             if data:
@@ -469,6 +474,7 @@ class App:
         scroll=ttk.Scrollbar(panel,command=text.yview);text.configure(yscrollcommand=scroll.set)
         scroll.pack(side='right',fill='y');text.pack(fill='both',expand=True)
         history=[
+            ('v0.7.8.0 alpha','SSH terminal sessions with strict host-key verification, asynchronous connection and shared command capture.'),
             ('v0.7.7.0 alpha','Icon ribbon, Devices/Captures sidebar, status indicators, guided home screen, activity bar and searchable Word capture history. Built from v0.7.6.4.'),
             ('v0.7.6.4','Combined Burn-In inventory rows share one cover page; evidence tables repeat by device; DD-MM-YY timestamps; simplified Windows menu.'),
             ('v0.7.6.3','Cancel controls and per-device status colors; readable export dates; combined template export per device; Windows-style menu and version history.'),
@@ -1056,6 +1062,11 @@ class App:
         if not self.selected:return
         p=self.get_profile()
         if p.get('transport')=='ssh':
+            active=self.sessions.get(p['id'])
+            if active and active.ser and active.ser.is_open:
+                self.tabs.select(active.frame)
+                active.text.focus_set()
+                return
             self.open_ssh_connection(p)
             return
         active=next((s for s in self.sessions.values() if s.ser and s.profile['port'].casefold()==p['port'].casefold()),None)
@@ -1473,6 +1484,8 @@ class App:
         save_json(j['folder']/'summary.json',dict(
             group=j['name'],device=j['session'].profile['name'],
             profile_id=j.get('profile_id'),com_port=j['session'].profile.get('port'),
+            transport=j['session'].profile.get('transport','serial'),
+            ssh_host=j['session'].profile.get('ssh_host') if j['session'].profile.get('transport')=='ssh' else None,
             cli_hostname=j.get('run_hostname'),expected_hostname='',
             management_ip_reference=j['session'].profile.get('ip'),
             started_at=j.get('started_at'),completed_at=ended,duration_seconds=round(elapsed,2) if elapsed is not None else None,
