@@ -89,6 +89,22 @@ class OperatorUITests(unittest.TestCase):
         self.assertIn('display version', editor.get('1.0', 'end'))
         dialog.destroy()
 
+    def test_ssh_connection_dialog_is_available(self):
+        self.app.open_ssh_connection()
+        windows = [child for child in self.app.root.winfo_children()
+                   if isinstance(child, tk.Toplevel)]
+        dialog = next(win for win in windows if win.title() == 'SSH Connection')
+        def walk(parent):
+            for child in parent.winfo_children():
+                yield child
+                yield from walk(child)
+        labels = [str(widget.cget('text')) for widget in walk(dialog)
+                  if isinstance(widget, ttk.Label)]
+        self.assertTrue(any('SSH port' in text for text in labels))
+        self.assertTrue(any('Password (not saved)' in text for text in labels))
+        self.assertTrue(any('host keys' in text.lower() for text in labels))
+        dialog.destroy()
+
     def test_com_manager_supports_extended_selection(self):
         self.app.open_com_manager()
         manager = self.app.com_manager
