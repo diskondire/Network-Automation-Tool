@@ -1,6 +1,6 @@
-# Console Capture v7.7 — Operator UX preview
+# Console Capture v0.7.7 — Operator UX preview
 
-This branch deliberately isolates an interface overhaul from the stable v7.6.4 release.
+This branch deliberately isolates an interface overhaul from the stable v0.7.6.4 release.
 
 ## What changed
 
@@ -19,7 +19,7 @@ This branch deliberately isolates an interface overhaul from the stable v7.6.4 r
 
 ## Stability boundaries
 
-The v7.6.4 serial discovery algorithm, bounded Enter probing, command engine, capture renderer and Word report generator are intentionally unchanged. The application is still editable Python source; no EXE is required.
+The v0.7.6.4 serial discovery algorithm, bounded Enter probing, command engine, capture renderer and Word report generator are intentionally unchanged. The application is still editable Python source; no EXE is required.
 
 ## Hands-on acceptance checklist
 
