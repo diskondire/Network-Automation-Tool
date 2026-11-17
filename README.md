@@ -1,4 +1,4 @@
-> **Development preview:** This branch is an experimental v7.7 operator-interface refresh. The stable v7.6.4 version remains on `main`. Do not deploy the preview to production systems until Windows console-hardware testing passes.
+> **Development preview:** This branch is an experimental v0.7.7 operator-interface refresh. The stable v0.7.6.4 version remains on `main`. Do not deploy the preview to production systems until Windows console-hardware testing passes.
 
 ### What's new in this preview
 
@@ -13,13 +13,13 @@
 - Add-on modules `ui_theme.py` and `capture_catalog.py` and Windows CI regression tests.
 - If the optional Burn-In Word template isn't installed locally, standard Word export remains available.
 
-See [v7.7 preview acceptance checklist](docs/UX_REVIEW_V7_7.md) for testing requirements.
+See [v0.7.7 preview acceptance checklist](docs/UX_REVIEW_V7_7.md) for testing requirements.
 
 ---
 
 # Console Capture
 
-**Current version: v7.6.4** · Windows desktop application · Editable Python source
+**Current version: v0.7.6.4** · Windows desktop application · Editable Python source
 
 Console Capture is a Python/Tkinter utility for working with network equipment over serial console ports. It discovers Windows COM ports, checks for console responses, runs selected CLI commands, saves command evidence, and exports reports to Microsoft Word.
 
@@ -113,7 +113,7 @@ If an expected capture is missing, the export reports that inside the intended c
 
 For other report layouts, the exporter also supports `CAPTURE_OUTPUTS` in its own body paragraph to append command evidence.
 
-### Multiple devices in one document (v7.6.4)
+### Multiple devices in one document (v0.7.6.4)
 
 Choose **Combined document — one inventory table and evidence tables per device**.
 
