@@ -13,20 +13,57 @@ RIBBON_BG = '#F2F5F8'
 RIBBON_HOVER = '#DCE9F4'
 
 
-def apply_theme(root):
+def theme_palette(mode='light'):
+    if mode == 'dark':
+        return dict(bg='#20272F',surface='#2B3540',fg='#ECF1F6',
+                    subtle='#AAB9C8',accent='#6BB3EE',input='#19232D',
+                    ribbon='#2B3540',hover='#3B5166',
+                    terminal_bg='#0F1720',terminal_fg='#D4F1E2',
+                    cursor='#F6D37B')
+    return dict(bg='#F3F6FA',surface='#FFFFFF',fg='#243849',
+                subtle='#526575',accent='#245A84',input='#FFFFFF',
+                ribbon=RIBBON_BG,hover=RIBBON_HOVER,
+                terminal_bg='#101820',terminal_fg='#DAF5E1',
+                cursor='#F6D37B')
+
+
+def apply_theme(root, mode='light'):
+    """Use the same ttk palette for both application modes.
+
+    The Windows Vista native theme ignores some requested foreground colors.
+    Dark mode uses the configurable clam theme; light mode can use Vista.
+    """
+    p = theme_palette(mode)
     style = ttk.Style(root)
     available = style.theme_names()
-    if 'vista' in available:
-        style.theme_use('vista')
-    elif 'clam' in available:
-        style.theme_use('clam')
+    target = 'clam' if mode == 'dark' else ('vista' if 'vista' in available else 'clam')
+    if target in available:
+        style.theme_use(target)
+    style.configure('.', background=p['bg'], foreground=p['fg'],
+                    font=('Segoe UI', 9))
+    style.configure('TFrame', background=p['bg'])
+    style.configure('TLabel', background=p['bg'], foreground=p['fg'])
+    style.configure('TLabelframe', background=p['bg'], foreground=p['fg'])
+    style.configure('TLabelframe.Label', background=p['bg'], foreground=p['fg'])
+    style.configure('TNotebook', background=p['bg'])
+    style.configure('TNotebook.Tab', background=p['surface'], foreground=p['fg'],
+                    padding=(12, 6))
+    style.map('TNotebook.Tab', background=[('selected', p['bg'])])
+    style.configure('TEntry', fieldbackground=p['input'], foreground=p['fg'])
+    style.configure('TCombobox', fieldbackground=p['input'], foreground=p['fg'])
+    style.configure('Treeview', background=p['input'], foreground=p['fg'],
+                    fieldbackground=p['input'])
+    style.map('Treeview', background=[('selected', p['accent'])],
+              foreground=[('selected', '#FFFFFF')])
+    style.configure('Treeview.Heading', background=p['surface'], foreground=p['fg'])
     style.configure('AppTitle.TLabel', font=('Segoe UI', 16, 'bold'))
-    style.configure('AppSubtitle.TLabel', font=('Segoe UI', 9), foreground=MUTED)
+    style.configure('AppSubtitle.TLabel', font=('Segoe UI', 9), foreground=p['subtle'])
     style.configure('SectionTitle.TLabel', font=('Segoe UI', 10, 'bold'))
-    style.configure('Counter.TLabel', font=('Segoe UI', 9), foreground=MUTED)
+    style.configure('Counter.TLabel', font=('Segoe UI', 9), foreground=p['subtle'])
     style.configure('StatusBar.TLabel', font=('Segoe UI', 9))
     style.configure('Action.TButton', padding=(10, 7))
-    style.configure('Primary.Action.TButton', padding=(10, 7), font=('Segoe UI', 9, 'bold'))
+    style.configure('Primary.Action.TButton', padding=(10, 7),
+                    font=('Segoe UI', 9, 'bold'))
     style.configure('Report.TLabelframe', padding=(8, 8))
     style.configure('Report.TLabelframe.Label', font=('Segoe UI', 9, 'bold'))
     return style
