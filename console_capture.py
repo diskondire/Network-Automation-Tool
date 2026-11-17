@@ -17,7 +17,7 @@ from serial.tools import list_ports
 from PIL import Image, ImageDraw, ImageFont
 from word_export import export_word
 from capture_catalog import list_capture_runs, matches_capture
-from ui_theme import apply_theme, photo_icon, ribbon_button, RIBBON_BG
+from ui_theme import apply_theme, photo_icon, ribbon_button, RIBBON_BG, theme_palette
 from app_config import APP_NAME, APP_SUBTITLE, app_version, window_title
 from discovery import scan_available_ports, propose_matches, probe_port, candidates_for
 from core import (transcript, prompt_kind, validate_profile, command_text, wrap_output,
@@ -49,10 +49,23 @@ class Session:
         self.text.bind('<<Paste>>', lambda event: 'break')
         scroll.configure(command=self.text.yview)
         scroll.pack(side='right',fill='y'); self.text.pack(fill='both',expand=True)
+        self.text.tag_configure('console_cursor',foreground='#F6D37B')
+        self._cursor_visible=True
+        self.text.after(520,self._blink_cursor)
         self.status = 'Disconnected'
         self.last_error = ''
         self.tx_bytes = 0
         self.rx_bytes = 0
+    def _blink_cursor(self):
+        """Blink a visible cursor marker without editing real serial transcripts."""
+        if not self.text.winfo_exists():
+            return
+        p=theme_palette(self.app.dark_mode.get() if hasattr(self.app,'dark_mode') else 'light')
+        foreground=p['cursor'] if self._cursor_visible and self.ser else p['terminal_bg']
+        self.text.tag_configure('console_cursor',foreground=foreground)
+        self._cursor_visible=not self._cursor_visible
+        self.text.after(520,self._blink_cursor)
+
     def close(self):
         if self.ser: self.ser.close()
         self.ser=None; self.verified=False; self.auto_allowed=False
@@ -122,7 +135,11 @@ class Session:
         scroll_position = self.text.yview()
         was_at_bottom = scroll_position[1] >= 0.98
         self.text.configure(state='normal'); self.text.delete('1.0','end')
-        self.text.insert('end',value); self.text.configure(state='disabled')
+        self.text.insert('end',value)
+        # The cursor is presentation-only; it never enters self.raw, self.visible,
+        # screenshots or command captures.
+        self.text.insert('end','▌','console_cursor')
+        self.text.configure(state='disabled')
         if was_at_bottom: self.text.see('end')
         else: self.text.yview_moveto(scroll_position[0])
     def poll(self):
@@ -217,7 +234,14 @@ class App:
         self.root.title(window_title())
         self.root.geometry("1450x870")
         self.root.minsize(1090, 690)
-        apply_theme(self.root)
+        self.ui_settings_file=BASE/'ui_settings.json'
+        try:
+            prefs=json.loads(self.ui_settings_file.read_text(encoding='utf-8'))
+            mode=prefs.get('theme','light')
+        except (OSError,ValueError,AttributeError):
+            mode='light'
+        self.dark_mode=tk.StringVar(value=mode if mode in ('light','dark') else 'light')
+        apply_theme(self.root,self.dark_mode.get())
         self._visual_icons=[]
         self._app_icon=photo_icon(self.root,'app',46)
         self._visual_icons.append(self._app_icon)
@@ -443,6 +467,8 @@ class App:
         self.refresh_profiles(); self.refresh_groups(); self.refresh_ports()
         self.refresh_recent_captures()
         self.tick()
+        if self.dark_mode.get()=='dark':
+            self.root.after_idle(self.toggle_dark_mode)
         self.root.after(250,self.open_com_manager)
 
 
@@ -508,7 +534,7 @@ class App:
     def open_appearance_window(self):
         win=tk.Toplevel(self.root)
         win.title('Terminal Appearance')
-        win.geometry('390x245')
+        win.geometry('420x310')
         win.transient(self.root)
         panel=ttk.Frame(win,padding=16); panel.pack(fill='both',expand=True)
         ttk.Label(panel,text='Display settings',font=('Segoe UI',11,'bold')).pack(anchor='w',pady=(0,12))
@@ -520,6 +546,9 @@ class App:
         screenshot=ttk.Combobox(panel,textvariable=self.font_size,
                                 values=['9','10','11','12','13','14','16'],state='readonly',width=16)
         screenshot.pack(anchor='w',pady=(4,10))
+        ttk.Checkbutton(panel,text='Use dark mode (application + terminal)',
+                        variable=self.dark_mode,onvalue='dark',offvalue='light',
+                        command=self.toggle_dark_mode).pack(anchor='w',pady=(8,9))
         ttk.Label(panel,text='Screenshots are rendered from the full transcript, not the window size.',
                   wraplength=340).pack(anchor='w')
 
@@ -1088,10 +1117,55 @@ class App:
             if not s: raise ValueError('Connect first.')
             s.send(b'\r')
         except Exception as exc: messagebox.showerror('Console',str(exc))
+    def toggle_dark_mode(self):
+        mode=self.dark_mode.get()
+        if mode not in ('light','dark'):
+            return
+        apply_theme(self.root,mode)
+        self._apply_widget_palette(self.root,theme_palette(mode))
+        self.update_terminal_appearance()
+        try:
+            save_json(self.ui_settings_file,{'theme':mode})
+        except OSError as exc:
+            self.status.set('Could not save theme preference: '+str(exc))
+
+    def _apply_widget_palette(self,root,palette):
+        """Apply colors to classic Tk controls which ttk themes don't manage."""
+        for widget in [root]+self._widget_descendants(root):
+            try:
+                if isinstance(widget,tk.Listbox):
+                    widget.configure(bg=palette['input'],fg=palette['fg'],
+                                     selectbackground=palette['accent'])
+                elif isinstance(widget,tk.Canvas):
+                    widget.configure(bg=palette['bg'])
+                elif isinstance(widget,tk.Text):
+                    if widget in [session.text for session in self.sessions.values()]:
+                        continue
+                    widget.configure(bg=palette['input'],fg=palette['fg'],
+                                     insertbackground=palette['fg'])
+                elif isinstance(widget,tk.Button):
+                    widget.configure(bg=palette['ribbon'],fg=palette['fg'],
+                                     activebackground=palette['hover'],
+                                     activeforeground=palette['fg'])
+                elif isinstance(widget,tk.Frame) and not isinstance(widget,ttk.Frame):
+                    widget.configure(bg=palette['ribbon'])
+            except tk.TclError:
+                continue
+        self.refresh_device_colors()
+
+    @staticmethod
+    def _widget_descendants(root):
+        for widget in root.winfo_children():
+            yield widget
+            yield from App._widget_descendants(widget)
+
     def update_terminal_appearance(self, event=None):
+        p=theme_palette(self.dark_mode.get())
         for session in self.sessions.values():
-            session.text.configure(bg='#101820', fg='#daf5e1', insertbackground='#daf5e1',
-                                   font=('Consolas', int(self.terminal_font_size.get())))
+            session.text.configure(bg=p['terminal_bg'],fg=p['terminal_fg'],
+                                   insertbackground=p['cursor'],
+                                   font=('Consolas',int(self.terminal_font_size.get())))
+            session.text.tag_configure('console_cursor',foreground=p['cursor'])
 
     def refresh_queue(self, completed=None):
         if not hasattr(self,'queue_list'): return
