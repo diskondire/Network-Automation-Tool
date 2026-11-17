@@ -22,3 +22,4 @@ device_profiles.json
 local_settings.json
 credentials.json
 secrets.json
+ui_settings.json
