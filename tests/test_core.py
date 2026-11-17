@@ -23,6 +23,24 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(prompt_kind('Welcome\n<PUB-SW01>'), ('cli', 'PUB-SW01'))
         self.assertEqual(prompt_kind('Welcome\nPassword:'), ('password', None))
 
+
+    def test_nested_huawei_output_filter_patterns(self):
+        cases = [
+            'display interface transceiver verbose | i (transceiver|Manu. Serial Number)',
+            'dis lldp nei | i (MultiGE|Power port class|Power type|PD requested power value|PSE allocated power value)',
+        ]
+        for command in cases:
+            with self.subTest(command=command):
+                self.assertEqual(command_text(command, {}), command)
+        self.assertEqual(command_text('- dis lldp nei | i (MultiGE|Power port class)', {}),
+                         'dis lldp nei | i (MultiGE|Power port class)')
+
+    def test_malformed_filters_rejected(self):
+        for command in ['display version | reboot', 'display version | i (broken',
+                        'display version | i broken)']:
+            with self.subTest(command=command), self.assertRaises(ValueError):
+                command_text(command, {})
+
     def test_terminal_backspace(self):
         self.assertEqual(transcript(b'abc\b \bd\n'), 'abd\n')
 
