@@ -1,0 +1,2 @@
+Release gate: v0.8.0-alpha.1 Windows x64 USB edition.
+This marker triggers the protected release workflow after Windows regression checks.
