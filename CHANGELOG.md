@@ -1,3 +1,14 @@
+## v0.7.8.0-alpha.1 — SSH support (main branch)
+- Added SSH terminal connections using Paramiko with verified SSH host keys.
+- Added SSH toolbar and sidebar actions for host, port, username and password.
+- Kept SSH credentials out of saved configuration; requires password on reconnect.
+- Added nonblocking GUI connection setup using a background worker and main-thread event queue.
+- Integrated SSH sessions with existing command sets, concurrent runs and TXT/BIN/PNG/Word evidence capture.
+- Kept COM port discovery and serial terminal support.
+- Updated START.bat to check for the SSH dependency and install it when missing.
+- Added SSH transport tests, Windows CI, connection documentation and explicit host-key security guidance.
+- v0.8 USB alpha and v0.9 HTML prototype not merged.
+
 ## v0.7.7.0-alpha.2 (unreleased)
 - Fixed Command Set Editor controls: permanently visible Save/Add/Delete/Close footer, direct Add/Edit/Remove command buttons, and window-size-aware editor sizing.
 - Redesigned target-port field to appear only for interface-specific commands.
