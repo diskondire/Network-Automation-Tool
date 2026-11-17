@@ -12,7 +12,8 @@ Console Capture is an editable-source Windows/Tkinter program that opens a USB/s
 6. **core.command_text** validates each command, expands an optional `{interface}` placeholder, and accepts Huawei output-filter patterns such as `| i (MultiGE|Power type)`. This is a single-command check and does not guarantee commands are non-destructive.
 7. A **Capture job** sends commands one at a time and saves TXT, BIN, PNG and `summary.json` under a per-run folder in `captures/`. Multiple devices can have independent jobs.
 8. **word_export.py** reads saved capture manifests and image evidence. It fills compatible user Word templates, including combined inventory rows plus separate evidence tables for each device.
-9. **capture_catalog.py** indexes saved runs for the Recent Captures and Word export search views; **ui_theme.py** draws the self-contained toolbar icon set.
+9. **app_config.py** centralizes the editable application name and subtitle, while **VERSION** supplies the title-bar/header version.
+10. **capture_catalog.py** indexes saved runs for the Recent Captures and Word export search views; **ui_theme.py** draws the self-contained toolbar icon set.
 
 ## Practical controls
 
