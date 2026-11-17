@@ -1144,6 +1144,8 @@ class App:
                     widget.configure(bg=palette['input'],fg=palette['fg'],
                                      insertbackground=palette['fg'])
                 elif isinstance(widget,tk.Button):
+                    widget._ribbon_background=palette['ribbon']
+                    widget._ribbon_hover=palette['hover']
                     widget.configure(bg=palette['ribbon'],fg=palette['fg'],
                                      activebackground=palette['hover'],
                                      activeforeground=palette['fg'])
