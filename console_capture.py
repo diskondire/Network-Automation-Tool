@@ -18,6 +18,7 @@ from PIL import Image, ImageDraw, ImageFont
 from word_export import export_word
 from capture_catalog import list_capture_runs, matches_capture
 from ui_theme import apply_theme, photo_icon, ribbon_button, RIBBON_BG
+from app_config import APP_NAME, APP_SUBTITLE, app_version, window_title
 from discovery import scan_available_ports, propose_matches, probe_port, candidates_for
 from core import (transcript, prompt_kind, validate_profile, command_text, wrap_output,
                   defaults, new_profile, save_json, safe_name, PAGER, ERROR)
@@ -213,7 +214,7 @@ class App:
     def __init__(self):
         #Title and window size
         self.root = tk.Tk()
-        self.root.title("Console Capture v0.7.7.0 — Alpha Preview")
+        self.root.title(window_title())
         self.root.geometry("1450x870")
         self.root.minsize(1090, 690)
         apply_theme(self.root)
@@ -240,8 +241,8 @@ class App:
         brand=ttk.Frame(header);brand.pack(side='left')
         ttk.Label(brand,image=self._app_icon).pack(side='left',padx=(0,10))
         brand_titles=ttk.Frame(brand);brand_titles.pack(side='left')
-        ttk.Label(brand_titles,text='Console Capture v0.7.7.0',style='AppTitle.TLabel').pack(anchor='w')
-        ttk.Label(brand_titles,text='Made by Tom Chan',style='AppSubtitle.TLabel').pack(anchor='w')
+        ttk.Label(brand_titles,text=f'{APP_NAME} v{app_version()}',style='AppTitle.TLabel').pack(anchor='w')
+        ttk.Label(brand_titles,text=APP_SUBTITLE,style='AppSubtitle.TLabel').pack(anchor='w')
         self.workspace_summary=tk.StringVar(value='No active connections')
         ttk.Label(header,textvariable=self.workspace_summary,style='Counter.TLabel').pack(side='right',padx=12)
         ttk.Separator(self.root).pack(side='top',fill='x')
