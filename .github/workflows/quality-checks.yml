@@ -27,6 +27,6 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
       - name: Syntax check
-        run: python -m compileall -q console_capture.py core.py discovery.py word_export.py ui_theme.py capture_catalog.py
+        run: python -m compileall -q console_capture.py core.py discovery.py word_export.py ui_theme.py capture_catalog.py app_config.py
       - name: Run regression tests
         run: python -m unittest discover -s tests -v
