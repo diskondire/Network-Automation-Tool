@@ -491,6 +491,7 @@ class App:
         scroll=ttk.Scrollbar(panel,command=text.yview);text.configure(yscrollcommand=scroll.set)
         scroll.pack(side='right',fill='y');text.pack(fill='both',expand=True)
         history=[
+            ('v0.8.0-alpha.1','Offline USB bundle, Python consent and dependency wheelhouse; optional dark mode and visible CLI cursor.'),
             ('v0.7.7.0 alpha','Icon ribbon, Devices/Captures sidebar, status indicators, guided home screen, activity bar and searchable Word capture history. Built from v0.7.6.4.'),
             ('v0.7.6.4','Combined Burn-In inventory rows share one cover page; evidence tables repeat by device; DD-MM-YY timestamps; simplified Windows menu.'),
             ('v0.7.6.3','Cancel controls and per-device status colors; readable export dates; combined template export per device; Windows-style menu and version history.'),
