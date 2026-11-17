@@ -1,3 +1,11 @@
+## v0.8.0-alpha.1 (USB prerelease)
+- Bundled offline USB launcher checks for existing 64-bit Python 3.10–3.14 and asks user consent before installing bundled signed Python 3.13.17.
+- Offline dependency wheels ship in the Windows release ZIP and install using pip --no-index; no internet needed on target PC.
+- Added a blinking UI-only CLI cursor marker which never modifies captured transcripts or Word screenshots.
+- Appearance dialog offers dark/light mode, saved in local ui_settings.json, with themed application and terminal surfaces.
+- Added Windows release automation and offline dependency smoke test; retained 0.7 prerelease history.
+- Kept v0.7 command sets, multi-COM connection, capture and Word export workflows intact.
+
 ## v0.7.7.0-alpha.2 (unreleased)
 - Fixed Command Set Editor controls: permanently visible Save/Add/Delete/Close footer, direct Add/Edit/Remove command buttons, and window-size-aware editor sizing.
 - Redesigned target-port field to appear only for interface-specific commands.
