@@ -478,10 +478,10 @@ class App:
             ('v0.7.2','Restored hostname and device-response probing during COM discovery.'),
             ('v0.7.1','Response checking and connection state added to port manager.'),
             ('v0.7.0 trial','Port-first workflow; optional hostnames; manual port entry initially trialled.'),
-            ('v6.5','COM manager, parallel command execution, Stop Selected Run and Word evidence export.'),
-            ('v6.1','Per-run PNG/TXT/BIN capture folders with summary.json.'),
-            ('v6.0','Console fixes, execution queue, connection diagnostics and Burn In command set.'),
-            ('Earlier prototypes / v3','Python/pySerial console automation, command evidence files, transcript screenshots, and capture status tracking.'),
+            ('v0.6.5','COM manager, parallel command execution, Stop Selected Run and Word evidence export.'),
+            ('v0.6.1','Per-run PNG/TXT/BIN capture folders with summary.json.'),
+            ('v0.6.0','Console fixes, execution queue, connection diagnostics and Burn In command set.'),
+            ('Earlier prototypes / v0.3','Python/pySerial console automation, command evidence files, transcript screenshots, and capture status tracking.'),
         ]
         text.tag_configure('heading',font=('Segoe UI',10,'bold'),spacing1=12,spacing3=3)
         for version,details in history:
@@ -649,7 +649,7 @@ class App:
         return 'Other / Unknown'
 
     def _scan_ports(self):
-        """Run v6.5-compatible serial probes off the Tk thread, retaining results."""
+        """Run v0.6.5-compatible serial probes off the Tk thread, retaining results."""
         if self.port_scan_active:return
         try: found=list(list_ports.comports())
         except Exception as exc:
