@@ -11,6 +11,8 @@
 - **Tab key:** Sent to the connected device for vendor-side completion while not running a command job. Local autocomplete is deferred.
 - **Interactive terminal safety:** Editing command sets does not lock the console, but manual commands remain blocked on the device currently executing automated capture.
 
+**Customize text:** Edit `app_config.py` to change the application name or subtitle. Edit the `VERSION` file to change the version shown in the window and header.
+
 See [How it works](docs/HOW_IT_WORKS.md) for a full workflow description.
 
 ---
