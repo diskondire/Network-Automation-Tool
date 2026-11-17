@@ -88,36 +88,53 @@ def validate_profile(profile):
     return profile
 
 def command_text(template, profile):
-    """Validate one interactive console command without restricting CLI abbreviations.
-
-    Pipes are allowed for Huawei output filters such as ``| i Serial``.
-    A single command is required: no control characters or command chaining.
-    """
+    """Validate one CLI command, including regex alternation in Huawei filters."""
     if not isinstance(template, str):
         raise ValueError('Enter one console command.')
     if any(ord(ch) < 32 or ord(ch) == 127 for ch in template):
         raise ValueError('Enter one command per line (no newlines or control characters).')
     text = template.strip()
+    if text.startswith('- '):
+        text = text[2:].strip()
     if not text or len(text) > 1024:
         raise ValueError('Enter a console command (maximum 1024 characters).')
-    if re.search(r'\{[^{}]+\}', text.replace('{interface}', '')) or '{' in text.replace('{interface}', '') or '}' in text.replace('{interface}', ''):
+    without_interface = text.replace('{interface}', '')
+    if '{' in without_interface or '}' in without_interface:
         raise ValueError('Only the {interface} placeholder is supported.')
     if '{interface}' in text:
         interface = str(profile.get('interface', '')).strip()
         if not interface or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9 /_.:-]*', interface):
-            raise ValueError('This command uses {interface}. Enter an interface name in Target Interface.')
+            raise ValueError('This command uses {interface}. Choose a target port first.')
         text = text.replace('{interface}', interface)
-    if any(ch in text for ch in (';', '&', '>', '<', '`', '$', '\\')):
+    if any(ch in text for ch in (';', '&', '>', '<', '$', '\\', chr(96))):
         raise ValueError('Command chaining and shell redirection are not supported.')
-    # A pipe must be a Huawei display-output filter, not an arbitrary second command.
-    segments = [part.strip() for part in text.split('|')]
-    if len(segments) > 1:
-        if not re.match(r'^(?:display|dis|show|sh)\s+', segments[0], re.I):
-            raise ValueError('Pipe filtering is supported for display/dis/show output only.')
-        for segment in segments[1:]:
-            if not re.fullmatch(r'(?:i|include|e|exclude|b|begin)\s+[^|]+', segment, re.I):
-                raise ValueError('Use a filter such as | i Serial or | include Serial.')
+    # A pipe in parentheses belongs to a display-output regex, not a new CLI command.
+    parts = []
+    depth = 0
+    start = 0
+    for index, char in enumerate(text):
+        if char == '(':
+            depth += 1
+        elif char == ')':
+            depth -= 1
+            if depth < 0:
+                raise ValueError('Unmatched filter parentheses.')
+        elif char == '|' and depth == 0:
+            parts.append(text[start:index].strip())
+            start = index + 1
+    if depth:
+        raise ValueError('Unmatched filter parentheses.')
+    parts.append(text[start:].strip())
+    if not parts[0] or not re.fullmatch(r'[A-Za-z][A-Za-z0-9-]*(?:\s+[^|]+)*', parts[0]):
+        raise ValueError('Invalid single CLI command.')
+    if len(parts) > 1:
+        if not re.match(r'^(?:display|dis|show|sh)\s+', parts[0], re.I):
+            raise ValueError('Output filtering is supported for display/dis/show only.')
+        for part in parts[1:]:
+            if not re.fullmatch(r'(?:i|include|e|exclude|b|begin)\s+.+', part, re.I):
+                raise ValueError('Use filters such as | i Serial or | i (Serial|Model).')
     return text
+
 
 def wrap_output(value, columns):
     lines = []

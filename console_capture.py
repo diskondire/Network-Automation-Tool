@@ -1,4 +1,4 @@
-"""Console Capture v7.6 — command capture and template-based Word reports."""
+"""Console Capture v0.7.7.0 alpha preview — operator workspace and Word evidence reports."""
 import ctypes
 import json
 import os
@@ -16,6 +16,9 @@ import serial
 from serial.tools import list_ports
 from PIL import Image, ImageDraw, ImageFont
 from word_export import export_word
+from capture_catalog import list_capture_runs, matches_capture
+from ui_theme import apply_theme, photo_icon, ribbon_button, RIBBON_BG
+from app_config import APP_NAME, APP_SUBTITLE, app_version, window_title
 from discovery import scan_available_ports, propose_matches, probe_port, candidates_for
 from core import (transcript, prompt_kind, validate_profile, command_text, wrap_output,
                   defaults, new_profile, save_json, safe_name, PAGER, ERROR)
@@ -36,6 +39,8 @@ class Session:
         self.cli_hostname = None
         self.frame = ttk.Frame(app.tabs)
         app.tabs.add(self.frame, text=profile['name'])
+        if hasattr(app, 'empty_state'):
+            app.empty_state.place_forget()
         scroll = ttk.Scrollbar(self.frame)
         self.text = tk.Text(self.frame, font=('Consolas',int(app.terminal_font_size.get())), bg='#101820', fg='#daf5e1', wrap='char', state='disabled', yscrollcommand=scroll.set)
         # Disabled for edits, but keyboard events are sent directly over serial.
@@ -66,7 +71,7 @@ class Session:
         device_id = getattr(self, 'profile', {}).get('id')
         busy = (device_id in jobs if jobs is not None else bool(getattr(self.app, 'job', None) or getattr(self.app, 'capture', None)))
         if busy:
-            self.app.status.set('This device is running a command group; manual input is disabled.')
+            self.app.status.set('Capture running on this device; wait for completion before manual input.')
             return 'break'
         keys = {
             'Return': b'\r', 'KP_Enter': b'\r', 'BackSpace': b'\x08',
@@ -209,8 +214,14 @@ class App:
     def __init__(self):
         #Title and window size
         self.root = tk.Tk()
-        self.root.title("Console Capture v7.6.4")
-        self.root.geometry("1500x900") #Window size 
+        self.root.title(window_title())
+        self.root.geometry("1450x870")
+        self.root.minsize(1090, 690)
+        apply_theme(self.root)
+        self._visual_icons=[]
+        self._app_icon=photo_icon(self.root,'app',46)
+        self._visual_icons.append(self._app_icon)
+        self.root.iconphoto(True,self._app_icon)
         self.sessions={}; self.jobs={}; self.captures={}; self.last_jobs={}; self.discovery_active=False; self.discovery_queue=Queue()
         config=defaults()
         try:
@@ -224,30 +235,52 @@ class App:
         if not any(g.get('name','').casefold()=='burn in' for g in self.groups):
             self.groups.append({'name': 'Burn In', 'target': 'Any', 'commands': ['display clock', 'display version', 'display device esn', 'display cpu-usage', 'display memory all', 'display device power system', 'display device temperature', 'display device fan', 'display alarm active']})
         self.selected=None
-        # Native Windows menu: one location for application utilities.
-        menu=tk.Menu(self.root)
-        file_menu=tk.Menu(menu,tearoff=False)
-        file_menu.add_command(label='Export Capture Evidence to Word...',command=self.open_word_export)
-        file_menu.add_command(label='Open Captures Folder',command=self.open_captures)
-        file_menu.add_separator()
-        file_menu.add_command(label='Exit',command=self.close)
-        menu.add_cascade(label='File',menu=file_menu)
-        connection_menu=tk.Menu(menu,tearoff=False)
-        connection_menu.add_command(label='Discover COM Ports...',command=self.open_com_manager)
-        connection_menu.add_command(label='Connection Diagnostics...',command=self.open_diagnostics_window)
-        menu.add_cascade(label='Connection',menu=connection_menu)
-        view_menu=tk.Menu(menu,tearoff=False)
-        view_menu.add_command(label='Terminal Appearance...',command=self.open_appearance_window)
-        menu.add_cascade(label='View',menu=view_menu)
-        help_menu=tk.Menu(menu,tearoff=False)
-        help_menu.add_command(label='Version History...',command=self.open_version_history)
-        help_menu.add_command(label='About Console Capture...',command=lambda:messagebox.showinfo('About Console Capture','Console Capture v7.6.4\nNetwork console command automation and evidence export.',parent=self.root))
-        menu.add_cascade(label='Help',menu=help_menu)
-        self.root.config(menu=menu)
-        # Do not duplicate menu commands in a second row of toolbar buttons.
-        # The command controls remain in the main/right panel.
+        # A compact informational header, not a second row of duplicate buttons.
+        header=ttk.Frame(self.root,padding=(14,9,14,9))
+        header.pack(side='top',fill='x')
+        brand=ttk.Frame(header);brand.pack(side='left')
+        ttk.Label(brand,image=self._app_icon).pack(side='left',padx=(0,10))
+        brand_titles=ttk.Frame(brand);brand_titles.pack(side='left')
+        ttk.Label(brand_titles,text=f'{APP_NAME} v{app_version()}',style='AppTitle.TLabel').pack(anchor='w')
+        ttk.Label(brand_titles,text=APP_SUBTITLE,style='AppSubtitle.TLabel').pack(anchor='w')
+        self.workspace_summary=tk.StringVar(value='No active connections')
+        ttk.Label(header,textvariable=self.workspace_summary,style='Counter.TLabel').pack(side='right',padx=12)
+        ttk.Separator(self.root).pack(side='top',fill='x')
+
+        # Windows-style icon ribbon: main navigation and common actions.
+        ribbon=tk.Frame(self.root,bg=RIBBON_BG,height=79)
+        ribbon.pack(side='top',fill='x')
+        actions=tk.Frame(ribbon,bg=RIBBON_BG)
+        actions.pack(side='left',padx=12,pady=5)
+        def ribbon_action(label,icon,callback):
+            return ribbon_button(actions,self.root,label,icon,callback,self._visual_icons)
+        def ribbon_divider():
+            tk.Frame(actions,bg='#CAD5DE',width=1,height=49).pack(side='left',padx=7,pady=7)
+        ribbon_action('COM Ports','ports',self.open_com_manager)
+        ribbon_action('Connect','connect',self.connect)
+        ribbon_action('Disconnect','disconnect',self.disconnect)
+        ribbon_divider()
+        ribbon_action('Captures','captures',self.open_captures)
+        ribbon_action('Word Export','word',self.open_word_export)
+        ribbon_divider()
+        ribbon_action('Diagnostics','diagnostics',self.open_diagnostics_window)
+        ribbon_action('Appearance','appearance',self.open_appearance_window)
+        ribbon_action('History','history',self.open_version_history)
+        ttk.Separator(self.root).pack(side='top',fill='x')
+
+        footer=ttk.Frame(self.root,padding=(12,5,12,6))
+        footer.pack(side='bottom',fill='x')
+        self.activity_summary=tk.StringVar(value='Ready · Discover COM ports to begin')
+        ttk.Label(footer,textvariable=self.activity_summary,style='StatusBar.TLabel').pack(side='left')
+        self.run_progress=tk.DoubleVar(value=0)
+        ttk.Progressbar(footer,maximum=100,variable=self.run_progress,length=150).pack(side='right',padx=(8,0))
+        self.run_progress_label=tk.StringVar(value='Idle')
+        ttk.Label(footer,textvariable=self.run_progress_label,style='Counter.TLabel').pack(side='right')
+        ttk.Separator(self.root).pack(side='bottom',fill='x')
         body=ttk.Frame(self.root); body.pack(fill='both',expand=True)
-        left=ttk.Frame(body,padding=8); left.pack(side='left',fill='y')
+        left=ttk.Frame(body,padding=8,width=278)
+        left.pack(side='left',fill='y')
+        left.pack_propagate(False)
         center=ttk.Frame(body); center.pack(side='left',fill='both',expand=True)
         # Scrollable right panel prevents lower controls from being hidden on laptop screens.
         right_holder=ttk.Frame(body);right_holder.pack(side='right',fill='y')
@@ -262,19 +295,54 @@ class App:
         right.bind('<Configure>',lambda e:right_canvas.configure(scrollregion=right_canvas.bbox('all')))
         right_canvas.bind('<Configure>',lambda e:right_canvas.itemconfigure(right_window,width=e.width))
 
-        # Operations-first sidebar: select a device and connect without editing its settings.
-        ttk.Label(left,text='DEVICES / SESSIONS').pack(anchor='w')
-        self.profile_list=tk.Listbox(left,height=12,exportselection=False,width=29,selectbackground="#2865a6",selectforeground="white")
+        # Sidebar navigator: live sessions and historical captures are distinct.
+        self.left_tabs=ttk.Notebook(left)
+        self.left_tabs.pack(fill='both',expand=True)
+        devices_page=ttk.Frame(self.left_tabs,padding=6)
+        history_page=ttk.Frame(self.left_tabs,padding=6)
+        device_tab_icon=photo_icon(self.root,'ports',16)
+        capture_tab_icon=photo_icon(self.root,'captures',16)
+        self._visual_icons.extend((device_tab_icon,capture_tab_icon))
+        self.left_tabs.add(devices_page,text='Devices',image=device_tab_icon,compound='left')
+        self.left_tabs.add(history_page,text='Captures',image=capture_tab_icon,compound='left')
+
+        ttk.Label(devices_page,text='LIVE DEVICE SESSIONS',style='SectionTitle.TLabel').pack(anchor='w')
+        self.device_count=tk.StringVar(value='No discovered devices')
+        ttk.Label(devices_page,textvariable=self.device_count,style='Counter.TLabel').pack(anchor='w',pady=(3,9))
+        self.profile_list=tk.Listbox(devices_page,height=12,exportselection=False,width=28,
+                                    selectbackground='#2865a6',selectforeground='white',
+                                    font=('Segoe UI',10),relief='solid',borderwidth=1)
         self.profile_list.pack(fill='both',expand=True)
         self.profile_list.bind('<<ListboxSelect>>',self.select_profile)
-        self.active_port_label=ttk.Label(left,text='Port: —')
+        self.active_port_label=ttk.Label(devices_page,text='Port: —')
         self.active_port_label.pack(anchor='w',pady=(9,0))
-        self.active_host_label=ttk.Label(left,text='Hostname: Unknown')
+        self.active_host_label=ttk.Label(devices_page,text='Hostname: Unknown',wraplength=225)
         self.active_host_label.pack(anchor='w')
-        self.active_status_label=ttk.Label(left,text='Status: Not connected')
-        self.active_status_label.pack(anchor='w',pady=(0,9))
-        ttk.Button(left,text='Connect selected device',command=self.connect).pack(fill='x')
-        ttk.Button(left,text='Disconnect selected device',command=self.disconnect).pack(fill='x')
+        self.active_status_label=tk.Label(devices_page,text='Not connected',anchor='w',
+                                         bg='#E9EDF1',fg='#30495C',padx=9,pady=5,
+                                         font=('Segoe UI',9,'bold'))
+        self.active_status_label.pack(fill='x',pady=(7,10))
+        ttk.Button(devices_page,text='Connect device',command=self.connect,
+                   style='Action.TButton').pack(fill='x',pady=(2,4))
+        ttk.Button(devices_page,text='Disconnect device',command=self.disconnect,
+                   style='Action.TButton').pack(fill='x')
+
+        ttk.Label(history_page,text='SAVED COMMAND EVIDENCE',style='SectionTitle.TLabel').pack(anchor='w')
+        self.recent_count=tk.StringVar(value='No captures')
+        ttk.Label(history_page,textvariable=self.recent_count,
+                  style='Counter.TLabel').pack(anchor='w',pady=(3,9))
+        self.recent_capture_list=tk.Listbox(history_page,height=13,width=27,
+                                            font=('Segoe UI',9),selectbackground='#2865a6',
+                                            selectforeground='white',exportselection=False)
+        self.recent_capture_list.pack(fill='both',expand=True)
+        self.recent_capture_list.bind('<Double-Button-1>',lambda _event:self.open_selected_capture())
+        self._recent_runs=[]
+        ttk.Label(history_page,text='Double-click to open the saved run folder.',
+                  style='Counter.TLabel',wraplength=230).pack(anchor='w',pady=(6,8))
+        ttk.Button(history_page,text='Open selected capture',
+                   command=self.open_selected_capture,style='Action.TButton').pack(fill='x',pady=(0,4))
+        ttk.Button(history_page,text='Refresh list',
+                   command=self.refresh_recent_captures).pack(fill='x')
 
         # Only session-specific fields are retained; no Device Profiles editor.
         self.fields={key:tk.StringVar(value='') for key in ('name','ip','port','baud','parity','stopbits','flow','timeout')}
@@ -287,6 +355,24 @@ class App:
         self.stop_button=None
         self.tabs=ttk.Notebook(center); self.tabs.pack(fill='both',expand=True)
         self.tabs.bind('<<NotebookTabChanged>>',self.tab_changed)
+        # Actionable empty state, hidden automatically when a terminal is opened.
+        self.empty_state=ttk.Frame(self.tabs,padding=24)
+        self.empty_state.place(relx=0.5,rely=0.43,anchor='center')
+        home_icon=photo_icon(self.root,'terminal',58)
+        self._visual_icons.append(home_icon)
+        ttk.Label(self.empty_state,image=home_icon).pack(pady=(0,10))
+        ttk.Label(self.empty_state,text='Your console workspace',
+                  font=('Segoe UI',15,'bold')).pack(pady=(0,7))
+        ttk.Label(self.empty_state,
+                  text='Discover a COM port, check its response, and connect to begin.\n'
+                       'Capture CLI evidence and prepare Word reports from the same workspace.',
+                  justify='center',wraplength=430).pack(pady=(0,16))
+        home_actions=ttk.Frame(self.empty_state);home_actions.pack()
+        for label,action in [('Find COM ports',self.open_com_manager),
+                             ('Browse captures',self.open_captures),
+                             ('Word reports',self.open_word_export)]:
+            ttk.Button(home_actions,text=label,command=action,
+                       style='Action.TButton').pack(side='left',padx=5)
         # The terminal Text widget handles keyboard input directly.
         self.status=tk.StringVar(value='Discover COM ports to begin.'); ttk.Label(center,textvariable=self.status,wraplength=650,padding=8).pack(fill='x')
         # Login prompts are handled manually in the terminal until that workflow is redesigned.
@@ -298,9 +384,9 @@ class App:
 
         # Interface is a command parameter, NOT a connection setting.
         # Editable per device; required only by commands containing {interface}.
-        target_frame=ttk.LabelFrame(right,text='TARGET INTERFACE · OPTIONAL',padding=8)
-        target_frame.pack(fill='x',pady=(0,10))
-        ttk.Label(target_frame,text='Used only when a command contains {interface}.',wraplength=305).pack(anchor='w')
+        target_frame=ttk.LabelFrame(right,text='PORT-SPECIFIC COMMANDS',padding=8)
+        self.target_frame=target_frame
+        ttk.Label(target_frame,text='Only commands containing {interface} use this port name.',wraplength=305).pack(anchor='w')
         self.interface_box=ttk.Combobox(
             target_frame,textvariable=self.fields['interface'],width=29,
             values=['MultiGE 1/0/1','GigabitEthernet 0/0/1','XGigabitEthernet 0/0/1',
@@ -309,33 +395,54 @@ class App:
         self.interface_box.bind('<<ComboboxSelected>>',self.apply_interface)
         self.interface_box.bind('<FocusOut>',self.apply_interface)
         self.interface_box.bind('<Return>',self.apply_interface)
-        ttk.Label(target_frame,text='Editable for each device; no Apply button or reconnect needed.',wraplength=305).pack(anchor='w')
+        ttk.Label(target_frame,text='Choose a physical port, e.g. MultiGE 1/0/1. No reconnect required.',wraplength=305).pack(anchor='w')
 
-        #Command Section
-        ttk.Label(right,text='COMMAND SET').pack(anchor='w') #Label
-        self.group_name=tk.StringVar(); self.group_box=ttk.Combobox(right,textvariable=self.group_name,state='readonly',width=27); self.group_box.pack(fill='x')
-        ttk.Button(right,text='Manage command sets',command=self.edit_groups).pack(fill='x')
-        ttk.Button(right,text='Preview command',command=self.preview_command_group).pack(fill='x')
-        ttk.Button(right,text='Run selected group',command=self.run_group).pack(fill='x',pady=5)
-        ttk.Button(right,text='Run on multiple devices',command=self.run_multiple).pack(fill='x')
-        self.stop_button=ttk.Button(right,text='Cancel Selected Run',command=self.stop)
-        self.stop_button.pack(fill='x',pady=(5,3))
-        ttk.Label(right,text='COMMAND EXECUTION QUEUE').pack(anchor='w',pady=(7,0))
-        self.queue_list = tk.Listbox(right,height=7,width=34,exportselection=False)
+        # Clear task-oriented command workspace; vendor command sets remain editable.
+        commands_panel=ttk.LabelFrame(right,text='COMMAND AUTOMATION',padding=9,style='Report.TLabelframe')
+        commands_panel.pack(fill='x',pady=(0,9))
+        ttk.Label(commands_panel,text='Command set',style='SectionTitle.TLabel').pack(anchor='w')
+        self.group_name=tk.StringVar()
+        self.group_box=ttk.Combobox(commands_panel,textvariable=self.group_name,state='readonly',width=27)
+        self.group_box.pack(fill='x',pady=(4,7))
+        self.group_box.bind('<<ComboboxSelected>>',self.update_target_visibility)
+        editor_row=ttk.Frame(commands_panel);editor_row.pack(fill='x',pady=(0,7))
+        ttk.Button(editor_row,text='Manage sets',command=self.edit_groups).pack(side='left',fill='x',expand=True,padx=(0,3))
+        ttk.Button(editor_row,text='Preview',command=self.preview_command_group).pack(side='left',fill='x',expand=True,padx=(3,0))
+        ttk.Button(commands_panel,text='Run selected group',command=self.run_group,style='Primary.Action.TButton').pack(fill='x',pady=(0,4))
+        ttk.Button(commands_panel,text='Run on multiple devices...',command=self.run_multiple,style='Action.TButton').pack(fill='x')
+        self.stop_button=ttk.Button(commands_panel,text='Cancel current run',command=self.stop)
+        self.stop_button.pack(fill='x',pady=(6,0))
+
+        queue_panel=ttk.LabelFrame(right,text='EXECUTION QUEUE',padding=9,style='Report.TLabelframe')
+        queue_panel.pack(fill='x',pady=(0,9))
+        self.queue_list=tk.Listbox(queue_panel,height=6,width=34,exportselection=False,font=('Consolas',9))
         self.queue_list.pack(fill='x')
-        self.all_jobs_label=ttk.Label(right,text='Selected device: no run',wraplength=255,justify='left')
-        self.all_jobs_label.pack(fill='x',pady=(4,3))
-        ttk.Label(right,text='Single console command').pack(anchor='w'); self.single=tk.StringVar(value='display ap all')
-        ttk.Entry(right,textvariable=self.single,width=28).pack(fill='x'); ttk.Button(right,text='Run + capture one command',command=self.run_single).pack(fill='x')
-        ttk.Separator(right).pack(fill='x', pady=9)
-        export_panel=ttk.LabelFrame(right,text='WORD REPORT',padding=8)
+        self.all_jobs_label=ttk.Label(queue_panel,text='Selected device: no run',wraplength=280,justify='left')
+        self.all_jobs_label.pack(fill='x',pady=(6,0))
+
+        single_panel=ttk.LabelFrame(right,text='SINGLE COMMAND',padding=9,style='Report.TLabelframe')
+        single_panel.pack(fill='x',pady=(0,9))
+        self.single=tk.StringVar(value='display version')
+        self.single.trace_add('write',lambda *_:self.update_target_visibility())
+        self.single_entry=ttk.Entry(single_panel,textvariable=self.single,width=28)
+        self.single_entry.pack(fill='x',pady=(0,6))
+        ttk.Label(single_panel,text='Save capture under command set',style='Counter.TLabel').pack(anchor='w')
+        self.single_group=tk.StringVar(value='Single command')
+        self.single_group_box=ttk.Combobox(single_panel,textvariable=self.single_group,state='readonly')
+        self.single_group_box.pack(fill='x',pady=(4,6))
+        ttk.Button(single_panel,text='Capture on selected device',command=self.run_single,style='Action.TButton').pack(fill='x')
+        ttk.Button(single_panel,text='Capture on multiple devices...',command=self.run_single_multiple).pack(fill='x',pady=(5,0))
+
+        export_panel=ttk.LabelFrame(right,text='WORD REPORTS',padding=9,style='Report.TLabelframe')
         export_panel.pack(fill='x',pady=(0,8))
-        ttk.Label(export_panel,text='Export saved captures to your Word template.',wraplength=300).pack(anchor='w')
-        ttk.Button(export_panel,text='Export to Word...',command=self.open_word_export).pack(fill='x',pady=(7,0))
+        ttk.Label(export_panel,text='Export saved command evidence using a Word template.',wraplength=290).pack(anchor='w')
+        ttk.Button(export_panel,text='Export captured evidence...',command=self.open_word_export,style='Action.TButton').pack(fill='x',pady=(7,0))
         # Terminal appearance and connection diagnostics moved to toolbar dialogs.
         self.font_size=tk.StringVar(value='11')
         self.root.protocol('WM_DELETE_WINDOW',self.close)
-        self.refresh_profiles(); self.refresh_groups(); self.refresh_ports(); self.tick()
+        self.refresh_profiles(); self.refresh_groups(); self.refresh_ports()
+        self.refresh_recent_captures()
+        self.tick()
         self.root.after(250,self.open_com_manager)
 
 
@@ -358,22 +465,23 @@ class App:
         scroll=ttk.Scrollbar(panel,command=text.yview);text.configure(yscrollcommand=scroll.set)
         scroll.pack(side='right',fill='y');text.pack(fill='both',expand=True)
         history=[
-            ('v7.6.4','Combined Burn-In inventory rows share one cover page; evidence tables repeat by device; DD-MM-YY timestamps; simplified Windows menu.'),
-            ('v7.6.3','Cancel controls and per-device status colors; readable export dates; combined template export per device; Windows-style menu and version history.'),
-            ('v7.6.2','Huawei CloudEngine model recognition; screenshots sized to Word table cells.'),
-            ('v7.6.1','Custom Burn-In Word templates; metadata tokens and command-image placeholders inside tables.'),
-            ('v7.6','Top utility toolbar; Word template export introduced.'),
-            ('v7.5.1','Huawei abbreviated commands and output filters; simplified login panel and optional interface parameter.'),
-            ('v7.5','COM response checking without a separate connection step; bounded Enter probing.'),
-            ('v7.4','Serial settings and command sets separated; session persistence; USB/Bluetooth grouping and consolidated connection status.'),
-            ('v7.3','Connected-device-oriented left panel and separate profile settings.'),
-            ('v7.2','Restored hostname and device-response probing during COM discovery.'),
-            ('v7.1','Response checking and connection state added to port manager.'),
-            ('v7.0 trial','Port-first workflow; optional hostnames; manual port entry initially trialled.'),
-            ('v6.5','COM manager, parallel command execution, Stop Selected Run and Word evidence export.'),
-            ('v6.1','Per-run PNG/TXT/BIN capture folders with summary.json.'),
-            ('v6.0','Console fixes, execution queue, connection diagnostics and Burn In command set.'),
-            ('Earlier prototypes / v3','Python/pySerial console automation, command evidence files, transcript screenshots, and capture status tracking.'),
+            ('v0.7.7.0 alpha','Icon ribbon, Devices/Captures sidebar, status indicators, guided home screen, activity bar and searchable Word capture history. Built from v0.7.6.4.'),
+            ('v0.7.6.4','Combined Burn-In inventory rows share one cover page; evidence tables repeat by device; DD-MM-YY timestamps; simplified Windows menu.'),
+            ('v0.7.6.3','Cancel controls and per-device status colors; readable export dates; combined template export per device; Windows-style menu and version history.'),
+            ('v0.7.6.2','Huawei CloudEngine model recognition; screenshots sized to Word table cells.'),
+            ('v0.7.6.1','Custom Burn-In Word templates; metadata tokens and command-image placeholders inside tables.'),
+            ('v0.7.6','Top utility toolbar; Word template export introduced.'),
+            ('v0.7.5.1','Huawei abbreviated commands and output filters; simplified login panel and optional interface parameter.'),
+            ('v0.7.5','COM response checking without a separate connection step; bounded Enter probing.'),
+            ('v0.7.4','Serial settings and command sets separated; session persistence; USB/Bluetooth grouping and consolidated connection status.'),
+            ('v0.7.3','Connected-device-oriented left panel and separate profile settings.'),
+            ('v0.7.2','Restored hostname and device-response probing during COM discovery.'),
+            ('v0.7.1','Response checking and connection state added to port manager.'),
+            ('v0.7.0 trial','Port-first workflow; optional hostnames; manual port entry initially trialled.'),
+            ('v0.6.5','COM manager, parallel command execution, Stop Selected Run and Word evidence export.'),
+            ('v0.6.1','Per-run PNG/TXT/BIN capture folders with summary.json.'),
+            ('v0.6.0','Console fixes, execution queue, connection diagnostics and Burn In command set.'),
+            ('Earlier prototypes / v0.3','Python/pySerial console automation, command evidence files, transcript screenshots, and capture status tracking.'),
         ]
         text.tag_configure('heading',font=('Segoe UI',10,'bold'),spacing1=12,spacing3=3)
         for version,details in history:
@@ -541,7 +649,7 @@ class App:
         return 'Other / Unknown'
 
     def _scan_ports(self):
-        """Run v6.5-compatible serial probes off the Tk thread, retaining results."""
+        """Run v0.6.5-compatible serial probes off the Tk thread, retaining results."""
         if self.port_scan_active:return
         try: found=list(list_ports.comports())
         except Exception as exc:
@@ -619,10 +727,10 @@ class App:
         if existing is not None and existing.winfo_exists():
             existing.deiconify();existing.lift();existing.focus_force();return
         win=tk.Toplevel(self.root);self.com_manager=win
-        win.title('COM Port Manager — Console Capture v7.5')
+        win.title('COM Port Manager — Console Capture')
         win.geometry('960x630');win.minsize(760,480)
         win.protocol('WM_DELETE_WINDOW',win.withdraw)
-        ttk.Label(win,text='Discover adapters, identify responding consoles, then connect. A detected port is not necessarily an active console.',padding=10).pack(anchor='w')
+        ttk.Label(win,text='Discover ports; use Ctrl/Shift to select multiple devices, then Connect Selected.',padding=10).pack(anchor='w')
         top=ttk.Frame(win,padding=(10,4));top.pack(fill='x')
         ttk.Label(top,text='Serial connection speed:').pack(side='left')
         speed=tk.StringVar(value='Auto (detected)')
@@ -648,14 +756,14 @@ class App:
             ttk.Button(editor,text='Apply',command=apply).pack(pady=12)
         ttk.Button(top,text='Edit Serial Settings...',command=edit_serial).pack(side='left')
         columns=('port','hostname','status','description')
-        tree=ttk.Treeview(win,columns=columns,show='tree headings',selectmode='browse')
+        tree=ttk.Treeview(win,columns=columns,show='tree headings',selectmode='extended')
         tree.heading('#0',text='Connection Type');tree.column('#0',width=170,stretch=False)
         for key,label,width in [('port','Port',90),('hostname','Hostname',170),('status','Status',240),('description','Windows Description',260)]:
             tree.heading(key,text=label);tree.column(key,width=width,stretch=key in ('status','description'))
         for label in ('USB','Bluetooth','Other / Unknown'):
             tree.insert('', 'end',iid='group:'+label,text=label,open=True)
         tree.pack(fill='both',expand=True,padx=10,pady=8)
-        details=tk.StringVar(value='Select a COM port to see probe details. No credentials are sent during discovery.')
+        details=tk.StringVar(value='Select a COM port to see identify the connection. No credentials are sent during discovery.')
         ttk.Label(win,textvariable=details,padding=(10,4),wraplength=850).pack(anchor='w')
         progress=tk.IntVar(value=0)
         bottom=ttk.Frame(win,padding=(10,6));bottom.pack(side='bottom',fill='x')
@@ -663,11 +771,10 @@ class App:
         ttk.Label(bottom,textvariable=progress_label).pack(side='left')
         pct=ttk.Label(bottom,text='0%');pct.pack(side='right')
         ttk.Progressbar(win,maximum=100,variable=progress).pack(side='bottom',fill='x',padx=10,pady=(0,6))
+        def selected_ports():
+            return [port for port in tree.selection() if port in self.port_results]
         def selected_port():
-            selection=tree.selection()
-            if not selection:return None
-            value=selection[0]
-            return value if value in self.port_results else None
+            return next(iter(selected_ports()),None)
         def show_selection(event=None):
             port=selected_port()
             if port:
@@ -705,15 +812,24 @@ class App:
             self._scan_ports()
             details.set('Checking ports with bounded Enter retries. Login may be required; no passwords are sent.')
         def connect_port():
-            port=selected_port()
-            if not port:return
-            if not self.port_results[port].get('present'):
-                messagebox.showwarning('COM port','This port is no longer reported by Windows.',parent=win);return
-            try:
-                if self.connect_discovered_port(port,serial_values(port)):
-                    details.set(f'{port} connected. Press Enter in its terminal if a prompt is not displayed.')
-                else:details.set(f'{port}: unable to open port; see connection error details.')
-            except Exception as exc:details.set(f'{port}: {exc}')
+            ports=selected_ports()
+            if not ports:return
+            successes=[];failed=[]
+            for port in ports:
+                if not self.port_results[port].get('present'):
+                    failed.append(port+': not present')
+                    continue
+                try:
+                    if self.connect_discovered_port(port,serial_values(port)):
+                        successes.append(port)
+                    else:
+                        failed.append(port+': could not open')
+                except Exception as exc:
+                    failed.append(port+': '+str(exc))
+            details.set(f'Connected {len(successes)}/{len(ports)} selected port(s).' +
+                        (' Errors: '+'; '.join(failed) if failed else ''))
+            if len(successes)>1:
+                details.set(f'Opened {len(successes)} console tabs. '+('; '.join(failed) if failed else ''))
         def disconnect_port():
             port=selected_port()
             if not port:return
@@ -792,25 +908,104 @@ class App:
                 win.after(120,finish)
         buttons=ttk.Frame(win,padding=(10,4));buttons.pack(fill='x')
         ttk.Button(buttons,text='Discover Ports',command=discover).pack(side='left',padx=3)
-        ttk.Button(buttons,text='Connect',command=connect_port).pack(side='left',padx=3)
+        ttk.Button(buttons,text='Connect Selected (Ctrl/Shift)',command=connect_port).pack(side='left',padx=3)
         ttk.Button(buttons,text='Check Response',command=check_response).pack(side='left',padx=3)
         ttk.Button(buttons,text='Disconnect',command=disconnect_port).pack(side='left',padx=3)
         ttk.Button(buttons,text='Close',command=win.withdraw).pack(side='right',padx=3)
         render()
 
+    @staticmethod
+    def _device_label(profile, session):
+        symbol='●' if session and session.ser else '○'
+        host=(session.cli_hostname or '') if session else ''
+        name=profile.get('name') or profile.get('port') or 'Device'
+        return f'{symbol} {name}' + (f' · {host}' if host and host.casefold()!=name.casefold() else '')
+
+    def refresh_recent_captures(self):
+        """Refresh only on demand or after a completed run; do not scan every tick."""
+        if not hasattr(self,'recent_capture_list'):
+            return
+        self._recent_runs=list_capture_runs(BASE/'captures')[:40]
+        self.recent_capture_list.configure(state='normal')
+        self.recent_capture_list.delete(0,'end')
+        for folder,data in self._recent_runs:
+            host=str(data.get('cli_hostname') or data.get('device') or 'Unknown')
+            group=str(data.get('group') or 'Capture')
+            port=str(data.get('com_port') or '?')
+            self.recent_capture_list.insert('end',f'{host[:19]} · {port} · {group[:12]}')
+        self.recent_count.set(f'{len(self._recent_runs)} most recent capture(s)')
+        if not self._recent_runs:
+            self.recent_capture_list.insert('end','No saved captures yet')
+            self.recent_capture_list.configure(state='disabled')
+        else:
+            self.recent_capture_list.configure(state='normal')
+
+    def open_selected_capture(self):
+        """Open the original evidence folder; never mutate saved transcripts."""
+        selected=self.recent_capture_list.curselection()
+        if not selected or selected[0]>=len(self._recent_runs):
+            self.status.set('Select a saved capture first.')
+            return
+        folder,_data=self._recent_runs[selected[0]]
+        try:
+            os.startfile(str(folder))
+        except (OSError,AttributeError) as exc:
+            self.show_error_details('Open capture folder',str(exc),parent=self.root)
+
+    def _refresh_active_status_badge(self, profile, session):
+        """Run status takes precedence; the text also describes connectivity."""
+        pid=profile['id']
+        is_open=bool(session and session.ser)
+        if pid in self.jobs:
+            text='Running commands' if is_open else 'Running · connection lost'
+            color='#FCE3B6'
+        elif pid in self.last_jobs:
+            result=self.last_jobs[pid].get('final_status')
+            if result=='completed':
+                text='Run completed' + (' · connected' if is_open else ' · disconnected')
+                color='#D5F0DB'
+            else:
+                text='Run ' + str(result or 'failed') + (' · connected' if is_open else ' · disconnected')
+                color='#F8D7DA'
+        elif is_open:
+            text='Port open · console connected'
+            color='#D9EAF8'
+        else:
+            text='Not connected'
+            color='#E9EDF1'
+        self.active_status_label.configure(text=text,bg=color,fg='#263E51')
+
     def refresh_profiles(self):
         self.profile_list.delete(0,'end')
         for p in self.profiles:
             session=self.sessions.get(p['id'])
-            indicator='● ' if session and session.ser else '○ '
-            self.profile_list.insert('end',indicator+p['name'])
+            self.profile_list.insert('end',self._device_label(p,session))
         self.refresh_device_colors()
         if self.profiles:
             index=next((i for i,p in enumerate(self.profiles) if p['id']==self.selected),0)
             self.profile_list.selection_set(index); self.select_profile()
     def refresh_groups(self):
-        self.group_box['values']=[g['name'] for g in self.groups]
-        if self.group_name.get() not in self.group_box['values']: self.group_name.set(self.groups[0]['name'] if self.groups else '')
+        names=[g['name'] for g in self.groups]
+        self.group_box['values']=names
+        if self.group_name.get() not in names:self.group_name.set(names[0] if names else '')
+        if hasattr(self,'single_group_box'):
+            self.single_group_box['values']=['Single command']+names
+            if self.single_group.get() not in self.single_group_box['values']:
+                self.single_group.set('Single command')
+        self.update_target_visibility()
+
+    def update_target_visibility(self,event=None):
+        if not hasattr(self,'target_frame'):
+            return
+        group=next((g for g in self.groups if g['name']==self.group_name.get()),None)
+        needed=bool(group and any('{interface}' in command for command in group.get('commands',[])))
+        needed=needed or ('{interface}' in self.single.get() if hasattr(self,'single') else False)
+        if needed:
+            if not self.target_frame.winfo_manager():
+                self.target_frame.pack(fill='x',before=self.group_box.master,pady=(0,9))
+        elif self.target_frame.winfo_manager():
+            self.target_frame.pack_forget()
+
 
     def get_profile(self): return next(p for p in self.profiles if p['id']==self.selected)
     def get_session(self): return self.sessions.get(self.selected)
@@ -821,7 +1016,7 @@ class App:
         session=self.sessions.get(p['id'])
         self.active_port_label.configure(text='Port: '+(p.get('port') or 'Not assigned'))
         self.active_host_label.configure(text='Hostname: '+((session.cli_hostname if session else '') or 'Unknown'))
-        self.active_status_label.configure(text='Status: '+('Port open' if session and session.ser else 'Disconnected'))
+        self._refresh_active_status_badge(p,session)
         for key,var in self.fields.items(): var.set(str(p.get(key,'')))
         self.username.set(''); self.auto.set(False); self.password.set('')
         session=self.get_session()
@@ -958,7 +1153,34 @@ class App:
 
     def run_single(self):
         if self.busy(): return
-        self.start('Single command',[self.single.get()])
+        self.start(self.single_group.get() or 'Single command',[self.single.get()])
+
+    def run_single_multiple(self):
+        available=[p for p in self.profiles if p['id'] in self.sessions and
+                   self.sessions[p['id']].ser and p['id'] not in self.jobs]
+        if not available:
+            messagebox.showwarning('Single command','Connect at least one idle device first.')
+            return
+        win=tk.Toplevel(self.root);win.title('Capture one command on multiple devices')
+        win.geometry('470x400')
+        ttk.Label(win,text='Choose devices for this command:',padding=12).pack(anchor='w')
+        options=[]
+        for p in available:
+            value=tk.BooleanVar(value=True)
+            ttk.Checkbutton(win,text=p['name']+' ('+p['port']+')',variable=value).pack(anchor='w',padx=18,pady=3)
+            options.append((p['id'],value))
+        def launch():
+            try:
+                name=self.single_group.get() or 'Single command'
+                command=self.single.get()
+                prepared=[self.prepare_run(pid,name,[command]) for pid,var in options if var.get()]
+                if not prepared:
+                    messagebox.showwarning('Single command','Select at least one device.',parent=win);return
+                win.destroy()
+                self.launch_runs(prepared)
+            except Exception as exc:
+                self.show_error_details('Single-command capture',str(exc),parent=win)
+        ttk.Button(win,text='Run and capture selected',command=launch).pack(pady=12)
 
     def run_multiple(self):
         """Launch independent runs; existing runs on other devices are unaffected."""
@@ -1202,6 +1424,7 @@ class App:
         completed_orders={r.get('order') for r in j['results'] if r['result']=='completed'}
         j['final_status']='stopped' if j.get('stop') else ('completed' if len(completed_orders)==len(j['commands']) and not j.get('errors') else 'partial')
         self.write_summary(j)
+        self.refresh_recent_captures()
         if hasattr(self,'jobs'):
             if self.jobs.get(j['profile_id']) is j:self.jobs.pop(j['profile_id'])
             self.last_jobs[j['profile_id']]=j
@@ -1217,45 +1440,92 @@ class App:
         from tkinter import filedialog
         root_dir=BASE/'captures'
         root_dir.mkdir(exist_ok=True)
-        runs=[]
-        for manifest in sorted(root_dir.glob('*/summary.json'), key=lambda x:x.stat().st_mtime, reverse=True):
-            try:
-                record=json.loads(manifest.read_text(encoding='utf-8'))
-                runs.append((manifest.parent,record))
-            except (OSError,ValueError):
-                continue
+        runs=list_capture_runs(root_dir)
         win=tk.Toplevel(self.root)
         win.title('Export Capture Evidence to Word')
-        win.geometry('780x760')
+        # Respect laptop screen heights and Windows display scaling.
+        height=max(480,min(690,win.winfo_screenheight()-110))
+        win.geometry(f'820x{height}')
+        win.minsize(650,470)
         win.transient(self.root)
-        ttk.Label(win,text='Select one or more completed capture runs (Ctrl/Shift for multi-select)',padding=10).pack(anchor='w')
-        listing=tk.Listbox(win,selectmode='extended',height=14,exportselection=False)
+
+        # Pack the action footer before the scrollable content so it always
+        # reserves visible space, regardless of capture-list or form height.
+        footer=ttk.Frame(win,padding=(12,10,12,10))
+        footer.pack(side='bottom',fill='x')
+        ttk.Separator(win).pack(side='bottom',fill='x')
+
+        content=ttk.Frame(win)
+        content.pack(side='top',fill='both',expand=True)
+        scrollbar=ttk.Scrollbar(content,orient='vertical')
+        scrollbar.pack(side='right',fill='y')
+        canvas=tk.Canvas(content,highlightthickness=0,borderwidth=0,
+                         yscrollcommand=scrollbar.set)
+        canvas.pack(side='left',fill='both',expand=True)
+        scrollbar.configure(command=canvas.yview)
+        form=ttk.Frame(canvas)
+        form_id=canvas.create_window((0,0),window=form,anchor='nw')
+        form.bind('<Configure>',lambda _event:canvas.configure(scrollregion=canvas.bbox('all')))
+        canvas.bind('<Configure>',lambda event:canvas.itemconfigure(form_id,width=event.width))
+
+        def scroll_form(event):
+            if event.delta:
+                canvas.yview_scroll(-int(event.delta/120) or (-1 if event.delta>0 else 1),'units')
+        # Only scroll the form while the pointer is inside non-editable
+        # form areas; the capture list retains its own native wheel behavior.
+        canvas.bind('<MouseWheel>',scroll_form)
+        form.bind('<MouseWheel>',scroll_form)
+        selection_info=tk.StringVar(value='Select a capture to export.')
+        ttk.Label(footer,textvariable=selection_info,style='Counter.TLabel').pack(side='left')
+        ttk.Label(form,text='CAPTURE HISTORY',style='SectionTitle.TLabel',padding=(12,12,12,4)).pack(anchor='w')
+        ttk.Label(form,text='Select one or more runs (Ctrl / Shift). Search by hostname, COM port, group, status or date.',padding=(12,0,12,6)).pack(anchor='w')
+        search_box=ttk.Frame(form,padding=(12,3,12,6));search_box.pack(fill='x')
+        ttk.Label(search_box,text='Find captures:').pack(side='left',padx=(0,8))
+        query=tk.StringVar(value='')
+        ttk.Entry(search_box,textvariable=query).pack(side='left',fill='x',expand=True)
+        result_count=tk.StringVar(value='')
+        ttk.Label(form,textvariable=result_count,style='Counter.TLabel',padding=(12,0,12,3)).pack(anchor='w')
+        listing=tk.Listbox(form,selectmode='extended',height=8,exportselection=False,font=('Consolas',10))
         listing.pack(fill='both',expand=True,padx=12)
-        for folder,record in runs:
-            listing.insert('end',f"{record.get('cli_hostname') or record.get('device') or 'Unknown hostname'} | {record.get('com_port','?')} | {record.get('group','Group')} | {self.display_timestamp(record.get('started_at'))} | {len(record.get('results',[]))} captures")
-        if runs:
-            listing.selection_set(0)
-        else:
-            listing.insert('end','No saved capture runs found')
-            listing.configure(state='disabled')
+        visible_indexes=[]
+        def refill(*_):
+            visible_indexes[:]=[i for i,run in enumerate(runs) if matches_capture(run,query.get())]
+            listing.configure(state='normal')
+            listing.delete(0,'end')
+            for i in visible_indexes:
+                folder,record=runs[i]
+                listing.insert('end',f"{record.get('cli_hostname') or record.get('device') or 'Unknown'} | {record.get('com_port','?')} | {record.get('group','Group')} | {self.display_timestamp(record.get('started_at'))} | {len(record.get('results',[]))} captures")
+            result_count.set(f'{len(visible_indexes)} matching run(s) · {len(runs)} saved')
+            if visible_indexes:listing.selection_set(0)
+            elif not runs:
+                listing.insert('end','No saved capture runs found')
+                listing.configure(state='disabled')
+        def update_selection_info(_event=None):
+            selected=len(listing.curselection()) if runs else 0
+            selection_info.set(f'{selected} selected  ·  {len(visible_indexes)} visible capture(s)')
+        listing.bind('<<ListboxSelect>>',update_selection_info)
+        query.trace_add('write',refill)
+        refill()
+        update_selection_info()
         combined=tk.BooleanVar(value=False)
-        ttk.Radiobutton(win,text='Separate documents — one document per selected run (default)',variable=combined,value=False).pack(anchor='w',padx=12,pady=(10,2))
-        ttk.Radiobutton(win,text='Combined document — one inventory table and evidence tables per device',variable=combined,value=True).pack(anchor='w',padx=12)
-        ttk.Separator(win).pack(fill='x',padx=12,pady=8)
-        template_path=tk.StringVar(value=str(BASE/'templates'/'BurnIn-Template.docx'))
-        ttk.Label(win,text='Word Template (.docx) · use any compatible template').pack(anchor='w',padx=12)
-        template_row=ttk.Frame(win);template_row.pack(fill='x',padx=12,pady=(2,6))
+        ttk.Radiobutton(form,text='Separate documents — one document per selected run (default)',variable=combined,value=False).pack(anchor='w',padx=12,pady=(10,2))
+        ttk.Radiobutton(form,text='Combined document — one inventory table and evidence tables per device',variable=combined,value=True).pack(anchor='w',padx=12)
+        ttk.Separator(form).pack(fill='x',padx=12,pady=8)
+        default_template=BASE/'templates'/'BurnIn-Template.docx'
+        template_path=tk.StringVar(value=str(default_template) if default_template.is_file() else '')
+        ttk.Label(form,text='Word template (.docx) · optional if not included').pack(anchor='w',padx=12)
+        template_row=ttk.Frame(form);template_row.pack(fill='x',padx=12,pady=(2,6))
         ttk.Entry(template_row,textvariable=template_path).pack(side='left',fill='x',expand=True)
         def choose_template():
             selected=filedialog.askopenfilename(parent=win,title='Choose Word template',
                 filetypes=[('Word document','*.docx')],initialdir=str(BASE/'templates'))
             if selected:template_path.set(selected)
         ttk.Button(template_row,text='Browse...',command=choose_template).pack(side='left',padx=(5,0))
-        ttk.Label(win,text='Fields: DATE, LABELNO, HOSTNAME, SERIALNO, MODELNO, DEVICENAME. Table image markers: DISPLAYCLOCK, DISPLAYVERSION, DISPLAYESN, DISPLAYCPU, DISPLAYMEM, DISPLAYPOWER, DISPLAYTEMP, DISPLAYFAN, DISPLAYALARM.',
+        ttk.Label(form,text='Fields: DATE, LABELNO, HOSTNAME, SERIALNO, MODELNO, DEVICENAME. Table image markers: DISPLAYCLOCK, DISPLAYVERSION, DISPLAYESN, DISPLAYCPU, DISPLAYMEM, DISPLAYPOWER, DISPLAYTEMP, DISPLAYFAN, DISPLAYALARM.',
                   wraplength=720).pack(anchor='w',padx=12)
-        ttk.Label(win,text='Optional metadata override (single run only):').pack(anchor='w',padx=12,pady=(7,2))
+        ttk.Label(form,text='Optional metadata override (single run only):').pack(anchor='w',padx=12,pady=(7,2))
         overrides={key:tk.StringVar(value='') for key in ('DATE','LABELNO','HOSTNAME','SERIALNO','MODELNO','DEVICENAME')}
-        meta_grid=ttk.Frame(win);meta_grid.pack(fill='x',padx=12,pady=(0,7))
+        meta_grid=ttk.Frame(form);meta_grid.pack(fill='x',padx=12,pady=(0,7))
         for i,key in enumerate(overrides):
             cell=ttk.Frame(meta_grid)
             cell.grid(row=i//3,column=i%3,sticky='ew',padx=(0,8),pady=2)
@@ -1263,7 +1533,7 @@ class App:
             ttk.Label(cell,text=key).pack(anchor='w')
             ttk.Entry(cell,textvariable=overrides[key],width=20).pack(fill='x')
         def export():
-            indexes=listing.curselection() if runs else ()
+            indexes=[visible_indexes[i] for i in listing.curselection() if i < len(visible_indexes)] if runs else []
             if not indexes:
                 messagebox.showwarning('Word export','Select at least one capture run.',parent=win)
                 return
@@ -1282,7 +1552,11 @@ class App:
                 messagebox.showinfo('Word export',f"Created {len(files)} Word document(s):\n"+'\n'.join(str(f) for f in files),parent=win)
             except Exception as exc:
                 self.show_error_details('Word export failed',f'{type(exc).__name__}: {exc}',parent=win)
-        ttk.Button(win,text='Export selected',command=export).pack(pady=12)
+        ttk.Button(footer,text='Cancel',command=win.destroy).pack(side='right',padx=(8,0))
+        self.word_export_action=ttk.Button(
+            footer,text='Export selected captures',command=export,
+            style='Primary.Action.TButton')
+        self.word_export_action.pack(side='right')
 
     def open_captures(self):
         folder = BASE / 'captures'
@@ -1304,50 +1578,186 @@ class App:
         messagebox.showinfo(f'Command Preview - {name}', preview)
 
     def edit_groups(self):
-        if self.busy():return
-        win=tk.Toplevel(self.root);win.title('Command sets');win.geometry('650x580');win.transient(self.root);win.grab_set()
-        picker=ttk.Combobox(win,values=[g['name'] for g in self.groups],state='readonly');picker.pack(fill='x',padx=12,pady=8)
-        name=tk.StringVar();target=tk.StringVar(value='WAC')
-        ttk.Label(win,text='Group name').pack(anchor='w',padx=12);ttk.Entry(win,textvariable=name).pack(fill='x',padx=12)
-        ttk.Label(win,text='Universal group (runs on selected device; commands still validated)').pack(anchor='w',padx=12)
-        listing=tk.Listbox(win,exportselection=False);listing.pack(fill='both',expand=True,padx=12,pady=8)
-        entry=ttk.Entry(win);entry.pack(fill='x',padx=12)
-        editing={'name':None}
+        """Non-modal command-set editor with a permanently visible action footer.
+
+        Direct multiline editing is the source of truth: one command per line.
+        Toolbar helpers add/locate lines; Save validates all lines before writing.
+        """
+        win = tk.Toplevel(self.root)
+        win.title('Command Set Editor')
+        height = max(480, min(670, win.winfo_screenheight() - 120))
+        win.geometry(f'780x{height}')
+        win.minsize(590, 460)
+        win.transient(self.root)
+        # Reserve the action bar before allocating space to the editor.
+        footer = ttk.Frame(win, padding=(12, 10, 12, 10))
+        footer.pack(side='bottom', fill='x')
+        ttk.Separator(win).pack(side='bottom', fill='x')
+        panel = ttk.Frame(win, padding=(12, 12, 12, 7))
+        panel.pack(side='top', fill='both', expand=True)
+
+        ttk.Label(panel, text='COMMAND SET EDITOR',
+                  style='SectionTitle.TLabel').pack(anchor='w')
+        ttk.Label(panel, text='Choose a command set, or add a new set. One command per line.',
+                  wraplength=700).pack(anchor='w', pady=(4, 8))
+        picker = ttk.Combobox(panel,
+                              values=[g['name'] for g in self.groups],
+                              state='readonly')
+        picker.pack(fill='x', pady=(0, 9))
+        ttk.Label(panel, text='Command set name').pack(anchor='w')
+        name = tk.StringVar()
+        ttk.Entry(panel, textvariable=name).pack(fill='x', pady=(3, 8))
+        ttk.Label(panel, text='Commands — edit directly in the box',
+                  style='SectionTitle.TLabel').pack(anchor='w')
+
+        # The text area is the only expanding region, not the action row.
+        body = ttk.Frame(panel)
+        body.pack(fill='both', expand=True, pady=(4, 6))
+        scrollbar = ttk.Scrollbar(body)
+        scrollbar.pack(side='right', fill='y')
+        editor = tk.Text(body, font=('Consolas', 11), undo=True,
+                         wrap='none', height=8, yscrollcommand=scrollbar.set)
+        editor.pack(side='left', fill='both', expand=True)
+        scrollbar.configure(command=editor.yview)
+
+        line_tools = ttk.Frame(panel)
+        line_tools.pack(fill='x', pady=(0, 4))
+        ttk.Label(panel,
+                  text='Add inserts a line. Edit jumps to the selected line. '
+                       'Save writes all non-empty lines in their displayed order.',
+                  wraplength=700).pack(anchor='w', pady=(1, 5))
+        editing = {'name': None}
+
         def load(event=None):
-            g=next(g for g in self.groups if g['name']==picker.get());editing['name']=g['name'];name.set(g['name']);target.set(g.get('target','WAC'));listing.delete(0,'end')
-            for c in g['commands']:listing.insert('end',c)
-        picker.bind('<<ComboboxSelected>>',load)
-        def select(event=None):
-            sel=listing.curselection()
-            if sel:entry.delete(0,'end');entry.insert(0,listing.get(sel[0]))
-        listing.bind('<<ListboxSelect>>',select)
-        def modify(action):
-            sel=listing.curselection();i=sel[0] if sel else None
-            if action in ('add','edit'):
-                value=entry.get().strip()
-                try:command_text(value,{'interface':'MultiGE 1/0/1'})
-                except ValueError as exc:messagebox.showerror('Command',str(exc),parent=win);return
-                if action=='add':listing.insert('end',value)
-                elif i is not None:listing.delete(i);listing.insert(i,value)
-            elif i is not None:
-                if action=='remove':listing.delete(i)
-                else:
-                    new=i+(-1 if action=='up' else 1)
-                    if 0<=new<listing.size():value=listing.get(i);listing.delete(i);listing.insert(new,value);listing.selection_set(new)
-        row=ttk.Frame(win);row.pack(pady=4)
-        for label,action in [('Add','add'),('Edit','edit'),('Remove','remove'),('Up','up'),('Down','down')]:ttk.Button(row,text=label,command=lambda a=action:modify(a)).pack(side='left')
-        def new():editing['name']=None;picker.set('');name.set('');listing.delete(0,'end');entry.delete(0,'end')
-        def save():
-            title=name.get().strip();commands=list(listing.get(0,'end'))
-            if not title or not commands:messagebox.showerror('Group','Enter a name and at least one command.',parent=win);return
-            if any(g['name']==title and g['name']!=editing['name'] for g in self.groups):messagebox.showerror('Group','Name already exists.',parent=win);return
-            self.groups=[g for g in self.groups if g['name']!=editing['name']];self.groups.append(dict(name=title,target='Any',commands=commands));self.persist();self.refresh_groups();win.destroy()
-        def delete():
-            if editing['name'] and messagebox.askyesno('Delete','Delete this group?',parent=win):
-                self.groups=[g for g in self.groups if g['name']!=editing['name']];self.persist();self.refresh_groups();win.destroy()
-        row=ttk.Frame(win);row.pack(pady=8)
-        for label,fn in [('New group',new),('Save group',save),('Delete group',delete)]:ttk.Button(row,text=label,command=fn).pack(side='left',padx=4)
-        if self.groups:picker.current(0);load()
+            group = next((g for g in self.groups if g['name'] == picker.get()), None)
+            if not group:
+                return
+            editing['name'] = group['name']
+            name.set(group['name'])
+            editor.delete('1.0', 'end')
+            editor.insert('1.0', '\n'.join(group['commands']))
+
+        picker.bind('<<ComboboxSelected>>', load)
+
+        def new_group():
+            editing['name'] = None
+            picker.set('')
+            name.set('')
+            editor.delete('1.0', 'end')
+            editor.focus_set()
+
+        def add_command():
+            # Enter directly into a newly inserted line, with no separate input.
+            line = editor.index('insert').split('.')[0]
+            if not editor.get('1.0', 'end-1c').strip():
+                editor.mark_set('insert', '1.0')
+            else:
+                editor.insert(f'{line}.end', '\n')
+            editor.focus_set()
+            editor.see('insert')
+
+        def edit_command():
+            # Tk text is already directly editable; move focus to the clicked line.
+            editor.focus_set()
+            editor.mark_set('insert', f"{editor.index('insert').split('.')[0]}.0")
+            editor.see('insert')
+
+        def remove_line():
+            line = editor.index('insert').split('.')[0]
+            editor.delete(f'{line}.0', f'{line}.0 lineend +1c')
+            editor.focus_set()
+
+        def save_group():
+            title = name.get().strip()
+            commands = [line.strip()
+                        for line in editor.get('1.0', 'end-1c').splitlines()
+                        if line.strip()]
+            if not title or not commands:
+                messagebox.showwarning('Command sets',
+                                       'Provide a name and at least one command.',
+                                       parent=win)
+                return
+            if any(g['name'].casefold() == title.casefold()
+                   and g['name'] != editing['name'] for g in self.groups):
+                messagebox.showerror('Command sets', 'This name already exists.',
+                                     parent=win)
+                return
+            try:
+                for line_no, command in enumerate(commands, 1):
+                    try:
+                        command_text(command, {'interface': 'MultiGE 1/0/1'})
+                    except ValueError as exc:
+                        raise ValueError(f'Command {line_no}: {exc}') from exc
+            except ValueError as exc:
+                messagebox.showerror('Command sets', str(exc), parent=win)
+                return
+
+            # Preserve the existing set position instead of moving it to the end.
+            original = editing['name']
+            if original is not None:
+                index = next((i for i, g in enumerate(self.groups)
+                              if g['name'] == original), None)
+            else:
+                index = None
+            previous = list(self.groups)
+            updated = {'name': title, 'target': 'Any', 'commands': commands}
+            if index is None:
+                self.groups.append(updated)
+            else:
+                self.groups[index] = updated
+            try:
+                self.persist()
+            except Exception as exc:
+                self.groups = previous
+                messagebox.showerror('Command sets', 'Saving failed: ' + str(exc),
+                                     parent=win)
+                return
+            editing['name'] = title
+            picker['values'] = [g['name'] for g in self.groups]
+            picker.set(title)
+            self.refresh_groups()
+            self.group_name.set(title)
+            self.update_target_visibility()
+            messagebox.showinfo('Command sets', f'Saved {len(commands)} command(s) in "{title}".',
+                                parent=win)
+
+        def delete_group():
+            original = editing['name']
+            if not original:
+                return
+            if not messagebox.askyesno('Delete command set',
+                                       f'Delete "{original}"?', parent=win):
+                return
+            previous = list(self.groups)
+            self.groups = [g for g in self.groups if g['name'] != original]
+            try:
+                self.persist()
+            except Exception as exc:
+                self.groups = previous
+                messagebox.showerror('Command sets', 'Deleting failed: ' + str(exc),
+                                     parent=win)
+                return
+            self.refresh_groups()
+            picker['values'] = [g['name'] for g in self.groups]
+            new_group()
+
+        ttk.Button(line_tools, text='+ Add command', command=add_command).pack(side='left')
+        ttk.Button(line_tools, text='Edit command', command=edit_command).pack(
+            side='left', padx=6)
+        ttk.Button(line_tools, text='Remove line', command=remove_line).pack(side='left')
+
+        ttk.Button(footer, text='Add new set', command=new_group).pack(side='left')
+        ttk.Button(footer, text='Delete set', command=delete_group).pack(
+            side='left', padx=(8, 0))
+        ttk.Button(footer, text='Close', command=win.destroy).pack(
+            side='right', padx=(8, 0))
+        ttk.Button(footer, text='Save changes', command=save_group,
+                   style='Primary.Action.TButton').pack(side='right')
+
+        if self.groups:
+            picker.current(0)
+            load()
+
     def tick(self):
         for s in list(self.sessions.values()):s.poll()
         jobs=list(getattr(self,'jobs',{}).values()) if hasattr(self,'jobs') else ([self.job] if self.job else [])
@@ -1362,12 +1772,25 @@ class App:
             self.status.set(s.status if not j else s.status+' | '+j['state'])
         self.refresh_queue()
         self.refresh_diagnostics()
+        connected=sum(bool(sess.ser) for sess in self.sessions.values())
+        self.workspace_summary.set(f'{connected} connected   ·   {len(self.profiles)} devices   ·   {len(self.jobs)} running')
+        self.device_count.set(f'{len(self.profiles)} device(s) · {connected} online')
+        if jobs:
+            total=sum(len(j['commands']) for j in jobs)
+            complete=sum(min(j['index'],len(j['commands'])) for j in jobs)
+            self.run_progress.set(100*complete/max(1,total))
+            self.run_progress_label.set(f'{complete}/{total} commands')
+            self.activity_summary.set(f'{len(jobs)} active command run(s)')
+        else:
+            self.run_progress.set(0)
+            self.run_progress_label.set('Idle')
+            self.activity_summary.set(self.status.get() or 'Ready')
         # Update operational indicators periodically without resetting list selection.
         self._sidebar_ticks=getattr(self,'_sidebar_ticks',0)+1
         if self._sidebar_ticks%10==0:
             for index,p in enumerate(self.profiles):
                 session=self.sessions.get(p['id'])
-                label=('● ' if session and session.ser else '○ ')+p['name']
+                label=self._device_label(p,session)
                 if index<self.profile_list.size() and self.profile_list.get(index)!=label:
                     self.profile_list.delete(index)
                     self.profile_list.insert(index,label)
@@ -1378,7 +1801,7 @@ class App:
                 session=self.get_session()
                 self.active_port_label.configure(text='Port: '+(p.get('port') or 'Not assigned'))
                 self.active_host_label.configure(text='Hostname: '+((session.cli_hostname if session else '') or 'Unknown'))
-                self.active_status_label.configure(text='Status: '+('Port open' if session and session.ser else 'Disconnected'))
+                self._refresh_active_status_badge(p,session)
         self.root.after(100,self.tick)
     def close(self):
         if self.jobs or self.captures:

@@ -1,6 +1,44 @@
+> **Alpha development branch:** Current version is **0.7.7.0-alpha.2**. The working stable release remains on `main`. This update is not approved for production serial hardware yet.
+
+## Operator changes in this alpha
+
+- **Target port (context-aware):** The Target Interface field is shown only when a selected command set or typed single command contains `{interface}`.
+- **Single-command evidence:** Choose an existing command-set name for saved evidence, or capture the command across multiple connected devices.
+- **COM Manager multi-connect:** Hold Ctrl/Shift to select multiple ports, then click **Connect Selected**. Each port opens a separate terminal tab, and failures are reported.
+- **Native menu removed:** Use the existing illustrated toolbar for discovery, diagnostics, capture folders, Word export and version history. The Windows title bar stays.
+- **Huawei CLI filtering:** Supports `display interface transceiver verbose | i (transceiver|Manu. Serial Number)` and `dis lldp nei | i (MultiGE|Power port class|Power type|PD requested power value|PSE allocated power value)`. A leading `- ` copied from a bullet is ignored.
+- **Command Set Editor:** Enter or edit commands directly in a multiline editor, one per line. The editor does not block terminal tabs.
+- **Tab key:** Sent to the connected device for vendor-side completion while not running a command job. Local autocomplete is deferred.
+- **Interactive terminal safety:** Editing command sets does not lock the console, but manual commands remain blocked on the device currently executing automated capture.
+
+**Customize text:** Edit `app_config.py` to change the application name or subtitle. Edit the `VERSION` file to change the version shown in the window and header.
+
+See [How it works](docs/HOW_IT_WORKS.md) for a full workflow description.
+
+---
+
+> **Development preview:** This branch is an experimental v0.7.7 operator-interface refresh. The stable v0.7.6.4 version remains on `main`. Do not deploy the preview to production systems until Windows console-hardware testing passes.
+
+### What's new in this preview
+
+- **Graphics refresh:** a flat icon ribbon for COM Ports, Connect, Disconnect, Captures, Word Export, Diagnostics, Appearance and History.
+- **Sidebar navigator:** Devices and Recent Captures tabs; open an evidence folder by double-clicking a saved run.
+- **Visual identity:** generated application icon, status indicator for the selected device and a home screen with real quick actions.
+- Icons are generated from Python/Pillow geometry; there are no extra image assets or font packs to distribute.
+- Windows-style workspace header and live activity/progress bar.
+- Consolidated task panels for commands, queue, single commands and Word reports.
+- Session list shows discovered hostnames.
+- Search saved captures directly in the Word export dialog.
+- Add-on modules `ui_theme.py` and `capture_catalog.py` and Windows CI regression tests.
+- If the optional Burn-In Word template isn't installed locally, standard Word export remains available.
+
+See [v0.7.7 preview acceptance checklist](docs/UX_REVIEW_V7_7.md) for testing requirements.
+
+---
+
 # Console Capture
 
-**Current version: v7.6.4** · Windows desktop application · Editable Python source
+**Current version: v0.7.6.4** · Windows desktop application · Editable Python source
 
 Console Capture is a Python/Tkinter utility for working with network equipment over serial console ports. It discovers Windows COM ports, checks for console responses, runs selected CLI commands, saves command evidence, and exports reports to Microsoft Word.
 
@@ -94,7 +132,7 @@ If an expected capture is missing, the export reports that inside the intended c
 
 For other report layouts, the exporter also supports `CAPTURE_OUTPUTS` in its own body paragraph to append command evidence.
 
-### Multiple devices in one document (v7.6.4)
+### Multiple devices in one document (v0.7.6.4)
 
 Choose **Combined document — one inventory table and evidence tables per device**.
 
