@@ -7,7 +7,7 @@ from pathlib import Path
 
 APP_NAME = 'Console Capture'
 APP_SUBTITLE = 'Made by Tom Chan'
-DEFAULT_VERSION = '0.7.7.0-alpha.2'
+DEFAULT_VERSION = '0.8.0-alpha.1'
 
 
 def app_version():
