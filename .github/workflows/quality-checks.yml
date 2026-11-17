@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/v7-7-experience-overhaul
+      - main
   pull_request:
     branches:
       - main
