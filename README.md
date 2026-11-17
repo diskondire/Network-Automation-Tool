@@ -1,3 +1,20 @@
+> **Alpha development branch:** Current version is **0.7.7.0-alpha.2**. The working stable release remains on `main`. This update is not approved for production serial hardware yet.
+
+## Operator changes in this alpha
+
+- **Target port (context-aware):** The Target Interface field is shown only when a selected command set or typed single command contains `{interface}`.
+- **Single-command evidence:** Choose an existing command-set name for saved evidence, or capture the command across multiple connected devices.
+- **COM Manager multi-connect:** Hold Ctrl/Shift to select multiple ports, then click **Connect Selected**. Each port opens a separate terminal tab, and failures are reported.
+- **Native menu removed:** Use the existing illustrated toolbar for discovery, diagnostics, capture folders, Word export and version history. The Windows title bar stays.
+- **Huawei CLI filtering:** Supports `display interface transceiver verbose | i (transceiver|Manu. Serial Number)` and `dis lldp nei | i (MultiGE|Power port class|Power type|PD requested power value|PSE allocated power value)`. A leading `- ` copied from a bullet is ignored.
+- **Command Set Editor:** Enter or edit commands directly in a multiline editor, one per line. The editor does not block terminal tabs.
+- **Tab key:** Sent to the connected device for vendor-side completion while not running a command job. Local autocomplete is deferred.
+- **Interactive terminal safety:** Editing command sets does not lock the console, but manual commands remain blocked on the device currently executing automated capture.
+
+See [How it works](docs/HOW_IT_WORKS.md) for a full workflow description.
+
+---
+
 > **Development preview:** This branch is an experimental v0.7.7 operator-interface refresh. The stable v0.7.6.4 version remains on `main`. Do not deploy the preview to production systems until Windows console-hardware testing passes.
 
 ### What's new in this preview
