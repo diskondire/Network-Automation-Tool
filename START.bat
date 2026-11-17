@@ -32,7 +32,7 @@ echo Creating local Python environment...
 if errorlevel 1 goto failed
 
 :check_dependencies
-".venv\Scripts\python.exe" -c "import serial, tkinter, docx; from PIL import ImageGrab" >nul 2>&1
+".venv\Scripts\python.exe" -c "import serial, tkinter, docx, paramiko; from PIL import ImageGrab" >nul 2>&1
 if errorlevel 1 goto install
 
 goto run
