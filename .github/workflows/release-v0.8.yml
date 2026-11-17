@@ -41,6 +41,16 @@ jobs:
         run: python -m pip install --upgrade pip
       - name: Build offline USB bundle
         run: python tools/build_usb.py --output ConsoleCapture_v0.8.0_USB.zip
+      - name: Verify offline Python dependencies from USB ZIP
+        shell: pwsh
+        run: |
+          Expand-Archive -LiteralPath ConsoleCapture_v0.8.0_USB.zip -DestinationPath offline-ci-test
+          $app = Join-Path 'offline-ci-test' 'ConsoleCapture_v0.8.0_USB'
+          python -m venv offline-ci-venv
+          & '.\\offline-ci-venv\\Scripts\\python.exe' -m pip install --disable-pip-version-check --no-index --find-links (Join-Path $app 'offline\\wheels') -r (Join-Path $app 'requirements.txt')
+          if ($LASTEXITCODE -ne 0) { throw 'Offline pip dependency installation failed.' }
+          & '.\\offline-ci-venv\\Scripts\\python.exe' -c 'import tkinter, serial, docx; from PIL import Image'
+          if ($LASTEXITCODE -ne 0) { throw 'Offline dependency import smoke test failed.' }
       - name: Upload USB build as workflow artifact
         uses: actions/upload-artifact@v4
         with:
