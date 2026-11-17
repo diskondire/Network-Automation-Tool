@@ -1,4 +1,4 @@
-"""Console Capture v7.7 preview — operator workspace and Word evidence reports."""
+"""Console Capture v0.7.7.0 alpha preview — operator workspace and Word evidence reports."""
 import ctypes
 import json
 import os
@@ -213,7 +213,7 @@ class App:
     def __init__(self):
         #Title and window size
         self.root = tk.Tk()
-        self.root.title("Console Capture v7.7 — UX Preview")
+        self.root.title("Console Capture v0.7.7.0 — Alpha Preview")
         self.root.geometry("1450x870")
         self.root.minsize(1090, 690)
         apply_theme(self.root)
@@ -240,7 +240,7 @@ class App:
         brand=ttk.Frame(header);brand.pack(side='left')
         ttk.Label(brand,image=self._app_icon).pack(side='left',padx=(0,10))
         brand_titles=ttk.Frame(brand);brand_titles.pack(side='left')
-        ttk.Label(brand_titles,text='Console Capture v7.7',style='AppTitle.TLabel').pack(anchor='w')
+        ttk.Label(brand_titles,text='Console Capture v0.7.7.0',style='AppTitle.TLabel').pack(anchor='w')
         ttk.Label(brand_titles,text='Made by Tom Chan',style='AppSubtitle.TLabel').pack(anchor='w')
         self.workspace_summary=tk.StringVar(value='No active connections')
         ttk.Label(header,textvariable=self.workspace_summary,style='Counter.TLabel').pack(side='right',padx=12)
@@ -463,19 +463,19 @@ class App:
         scroll=ttk.Scrollbar(panel,command=text.yview);text.configure(yscrollcommand=scroll.set)
         scroll.pack(side='right',fill='y');text.pack(fill='both',expand=True)
         history=[
-            ('v7.7 preview','Icon ribbon, Devices/Captures sidebar, status indicators, guided home screen, activity bar and searchable Word capture history. Built from v7.6.4.'),
-            ('v7.6.4','Combined Burn-In inventory rows share one cover page; evidence tables repeat by device; DD-MM-YY timestamps; simplified Windows menu.'),
-            ('v7.6.3','Cancel controls and per-device status colors; readable export dates; combined template export per device; Windows-style menu and version history.'),
-            ('v7.6.2','Huawei CloudEngine model recognition; screenshots sized to Word table cells.'),
-            ('v7.6.1','Custom Burn-In Word templates; metadata tokens and command-image placeholders inside tables.'),
-            ('v7.6','Top utility toolbar; Word template export introduced.'),
-            ('v7.5.1','Huawei abbreviated commands and output filters; simplified login panel and optional interface parameter.'),
-            ('v7.5','COM response checking without a separate connection step; bounded Enter probing.'),
-            ('v7.4','Serial settings and command sets separated; session persistence; USB/Bluetooth grouping and consolidated connection status.'),
-            ('v7.3','Connected-device-oriented left panel and separate profile settings.'),
-            ('v7.2','Restored hostname and device-response probing during COM discovery.'),
-            ('v7.1','Response checking and connection state added to port manager.'),
-            ('v7.0 trial','Port-first workflow; optional hostnames; manual port entry initially trialled.'),
+            ('v0.7.7.0 alpha','Icon ribbon, Devices/Captures sidebar, status indicators, guided home screen, activity bar and searchable Word capture history. Built from v0.7.6.4.'),
+            ('v0.7.6.4','Combined Burn-In inventory rows share one cover page; evidence tables repeat by device; DD-MM-YY timestamps; simplified Windows menu.'),
+            ('v0.7.6.3','Cancel controls and per-device status colors; readable export dates; combined template export per device; Windows-style menu and version history.'),
+            ('v0.7.6.2','Huawei CloudEngine model recognition; screenshots sized to Word table cells.'),
+            ('v0.7.6.1','Custom Burn-In Word templates; metadata tokens and command-image placeholders inside tables.'),
+            ('v0.7.6','Top utility toolbar; Word template export introduced.'),
+            ('v0.7.5.1','Huawei abbreviated commands and output filters; simplified login panel and optional interface parameter.'),
+            ('v0.7.5','COM response checking without a separate connection step; bounded Enter probing.'),
+            ('v0.7.4','Serial settings and command sets separated; session persistence; USB/Bluetooth grouping and consolidated connection status.'),
+            ('v0.7.3','Connected-device-oriented left panel and separate profile settings.'),
+            ('v0.7.2','Restored hostname and device-response probing during COM discovery.'),
+            ('v0.7.1','Response checking and connection state added to port manager.'),
+            ('v0.7.0 trial','Port-first workflow; optional hostnames; manual port entry initially trialled.'),
             ('v6.5','COM manager, parallel command execution, Stop Selected Run and Word evidence export.'),
             ('v6.1','Per-run PNG/TXT/BIN capture folders with summary.json.'),
             ('v6.0','Console fixes, execution queue, connection diagnostics and Burn In command set.'),
