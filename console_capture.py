@@ -20,6 +20,7 @@ from capture_catalog import list_capture_runs, matches_capture
 from ui_theme import apply_theme, photo_icon, ribbon_button, RIBBON_BG
 from app_config import APP_NAME, APP_SUBTITLE, app_version, window_title
 from discovery import scan_available_ports, propose_matches, probe_port, candidates_for
+from ssh_transport import SSHTransport, validate_ssh_endpoint
 from core import (transcript, prompt_kind, validate_profile, command_text, wrap_output,
                   defaults, new_profile, save_json, safe_name, PAGER, ERROR)
 
@@ -223,6 +224,7 @@ class App:
         self._visual_icons.append(self._app_icon)
         self.root.iconphoto(True,self._app_icon)
         self.sessions={}; self.jobs={}; self.captures={}; self.last_jobs={}; self.discovery_active=False; self.discovery_queue=Queue()
+        self.ssh_results=Queue(); self.ssh_pending=set()
         config=defaults()
         try:
             if (BASE/'device_profiles.json').exists(): config['profiles']=json.loads((BASE/'device_profiles.json').read_text(encoding='utf-8'))
@@ -257,6 +259,7 @@ class App:
         def ribbon_divider():
             tk.Frame(actions,bg='#CAD5DE',width=1,height=49).pack(side='left',padx=7,pady=7)
         ribbon_action('COM Ports','ports',self.open_com_manager)
+        ribbon_action('SSH','connect',self.open_ssh_connection)
         ribbon_action('Connect','connect',self.connect)
         ribbon_action('Disconnect','disconnect',self.disconnect)
         ribbon_divider()
@@ -324,6 +327,7 @@ class App:
         self.active_status_label.pack(fill='x',pady=(7,10))
         ttk.Button(devices_page,text='Connect device',command=self.connect,
                    style='Action.TButton').pack(fill='x',pady=(2,4))
+        ttk.Button(devices_page,text='New SSH session...',command=self.open_ssh_connection).pack(fill='x',pady=(0,4))
         ttk.Button(devices_page,text='Disconnect device',command=self.disconnect,
                    style='Action.TButton').pack(fill='x')
 
@@ -968,7 +972,7 @@ class App:
                 text='Run ' + str(result or 'failed') + (' · connected' if is_open else ' · disconnected')
                 color='#F8D7DA'
         elif is_open:
-            text='Port open · console connected'
+            text=('SSH connected' if profile.get('transport')=='ssh' else 'Port open · console connected')
             color='#D9EAF8'
         else:
             text='Not connected'
@@ -1051,6 +1055,9 @@ class App:
         if self.busy(): return
         if not self.selected:return
         p=self.get_profile()
+        if p.get('transport')=='ssh':
+            self.open_ssh_connection(p)
+            return
         active=next((s for s in self.sessions.values() if s.ser and s.profile['port'].casefold()==p['port'].casefold()),None)
         if active:
             self.tabs.select(active.frame); active.text.focus_set();return
@@ -1075,6 +1082,119 @@ class App:
             if 'session' in locals():
                 session.close()
             self.show_error_details('COM connection error',f'Operation: Opening COM port\nPort: {p.get("port")}\nException: {type(exc).__name__}\nError code: {getattr(exc, "winerror", None) or getattr(exc, "errno", "Not provided")}\nFull error: {exc}')
+    def open_ssh_connection(self, existing=None):
+        """Connect using password authentication; no password is saved.
+
+        Unknown SSH host keys are rejected until the operator verifies and
+        adds the device's key to the user's OpenSSH known_hosts file.
+        """
+        win=tk.Toplevel(self.root)
+        win.title('SSH Connection')
+        win.geometry('440x350')
+        win.minsize(400,330)
+        win.transient(self.root)
+        panel=ttk.Frame(win,padding=16)
+        panel.pack(fill='both',expand=True)
+        ttk.Label(panel,text='SSH SESSION',style='SectionTitle.TLabel').pack(anchor='w',pady=(0,10))
+        default_host=existing.get('ssh_host','') if existing else ''
+        default_user=existing.get('ssh_user','') if existing else ''
+        default_port=str(existing.get('ssh_port',22)) if existing else '22'
+        variables={key:tk.StringVar(value=value) for key,value in (
+            ('host',default_host),('port',default_port),
+            ('username',default_user),('password',''))}
+        for label,key in (('IP address / hostname','host'),('SSH port','port'),
+                          ('Username','username'),('Password (not saved)','password')):
+            ttk.Label(panel,text=label).pack(anchor='w')
+            entry=ttk.Entry(panel,textvariable=variables[key],show='*' if key=='password' else '')
+            entry.pack(fill='x',pady=(2,8))
+            if key=='host':entry.focus_set()
+        ttk.Label(panel,text='SSH host keys must already be trusted in ~/.ssh/known_hosts. '
+                  'Unknown or changed host keys are rejected.',
+                  wraplength=395,style='Counter.TLabel').pack(anchor='w',pady=(0,9))
+
+        def submit():
+            try:
+                host,port,user=validate_ssh_endpoint(variables['host'].get(),
+                    variables['port'].get(),variables['username'].get())
+                password=variables['password'].get()
+                if not password:
+                    raise ValueError('Enter the SSH password for this connection.')
+                p=existing
+                if p is None:
+                    p=new_profile('SSH')
+                    p.update(name=f'{user}@{host}',role='Any',transport='ssh',
+                             ssh_host=host,ssh_port=port,ssh_user=user,
+                             port=f'SSH:{host}:{port}',auto_login=False)
+                    self.profiles.append(p)
+                else:
+                    if p['id'] in self.ssh_pending:
+                        raise ValueError('SSH connection is already in progress.')
+                    p.update(name=f'{user}@{host}',ssh_host=host,ssh_port=port,
+                             ssh_user=user,port=f'SSH:{host}:{port}')
+                selected_id=p['id']
+                # Do not store passwords on the device profile or disk.
+                self.ssh_pending.add(selected_id)
+                self.selected=selected_id
+                self.refresh_profiles()
+                self.status.set(f'Connecting to {host}:{port} via SSH...')
+                win.destroy()
+
+                def worker():
+                    try:
+                        adapter=SSHTransport.connect(host,port,user,password,timeout=10)
+                        self.ssh_results.put((selected_id,adapter,None))
+                    except Exception as exc:
+                        self.ssh_results.put((selected_id,None,f'{type(exc).__name__}: {exc}'))
+                threading.Thread(target=worker,daemon=True).start()
+            except Exception as exc:
+                messagebox.showerror('SSH Connection',str(exc),parent=win)
+        ttk.Button(panel,text='Connect SSH',command=submit,
+                   style='Primary.Action.TButton').pack(fill='x')
+        win.bind('<Return>',lambda _event:submit())
+
+    def poll_ssh_results(self):
+        """Transfer SSH connections from workers to Tk on the main thread."""
+        while True:
+            try:
+                profile_id,transport,error=self.ssh_results.get_nowait()
+            except Empty:
+                break
+            self.ssh_pending.discard(profile_id)
+            p=next((item for item in self.profiles if item['id']==profile_id),None)
+            if not p:
+                if transport:transport.close()
+                continue
+            if error:
+                self.status.set('SSH connection failed: '+error)
+                messagebox.showerror('SSH Connection Failed',
+                    error+'\n\nIf the host key is unknown, verify it with your network '
+                    'administrator and add the trusted key to ~/.ssh/known_hosts '
+                    'before connecting. Host-key verification cannot be bypassed.')
+                continue
+            session=self.sessions.get(profile_id)
+            if not session:
+                session=Session(self,p)
+                self.sessions[profile_id]=session
+            else:
+                session.close()
+            session.profile=dict(p)
+            session.ser=transport
+            session.raw.clear()
+            session.sent.clear()
+            session.seen_failure=False
+            session.rx_bytes=0
+            session.tx_bytes=0
+            session.cli_hostname=None
+            session.password=''
+            session.auto_allowed=False
+            session.status=f'SSH connected to {p["ssh_host"]}:{p["ssh_port"]}.'
+            session.redraw()
+            self.refresh_profiles()
+            self.tabs.select(session.frame)
+            self.update_terminal_appearance()
+            session.text.focus_set()
+            self.status.set(session.status)
+
     def disconnect(self):
         if self.busy(): return
         s=self.get_session()
@@ -1130,8 +1250,10 @@ class App:
             return 'No selected device'
         if not p: return 'No selected device'
         connected=bool(s and s.ser and s.ser.is_open)
-        lines=[f'Device: {p["name"]}',f'COM port: {p["port"]} | {"OPEN" if connected else "CLOSED"}',
-               f'Baud: {p["baud"]} | {p["parity"]}/8/{p["stopbits"]} | Flow: {p["flow"]}',
+        lines=[f'Device: {p["name"]}', f'Connection: {p.get("transport", "serial").upper()} | {p["port"]} | {"OPEN" if connected else "CLOSED"}']
+        if p.get('transport')!='ssh':
+            lines.append(f'Baud: {p["baud"]} | {p["parity"]}/8/{p["stopbits"]} | Flow: {p["flow"]}')
+        lines += [
                f'Detected hostname: {getattr(s,"cli_hostname",None) or "Unknown"}',
                f'CLI hostname: {getattr(s,"cli_hostname",None) or "Not detected"}',
                f'RX: {getattr(s,"rx_bytes",0)} bytes | TX: {getattr(s,"tx_bytes",0)} bytes']
@@ -1285,7 +1407,7 @@ class App:
         j=j or self.job
         if not j or j['state']!='running':return
         s=j['session']
-        if not s.ser:self.failure('Serial connection lost',j=j);return
+        if not s.ser or not s.ser.is_open:self.failure('Device connection lost',j=j);return
         count=len(PAGER.findall(s.raw.decode('utf-8',errors='replace')))
         if count>j['pager']:
             j['pager']=count
@@ -1759,6 +1881,7 @@ class App:
             load()
 
     def tick(self):
+        self.poll_ssh_results()
         for s in list(self.sessions.values()):s.poll()
         jobs=list(getattr(self,'jobs',{}).values()) if hasattr(self,'jobs') else ([self.job] if self.job else [])
         for j in jobs:
