@@ -1,4 +1,13 @@
 ## v0.7.7.0-alpha.2 (unreleased)
+- Redesigned target-port field to appear only for interface-specific commands.
+- Added single-command evidence under an existing command set and a multi-device capture option.
+- Removed redundant native menu; retained the graphic Windows-style ribbon.
+- Added Ctrl/Shift multi-select and batch Connect Selected in the COM Manager.
+- Allowed Huawei filter regex alternatives inside parentheses and leading bulleted commands.
+- Replaced the command set's separate input field with a direct multiline editor.
+- Kept the command-set editor non-modal so terminals remain interactive while editing.
+- Retained serial Tab transmission; local predictive CLI completion is deferred.
+- Prefixed displayed and documented versions with 0. for the alpha series.
 - Fixed the Word export dialog action bar: Export selected captures and Cancel now remain visible at the bottom, with a scrollable capture/template form and screen-height-aware window sizing.
 - Added a classic Windows-style icon ribbon, application logo, Devices/Captures sidebar, per-device status indicator, and actionable home screen.
 - All toolbar shortcuts invoke existing application commands; native menus remain accessible.
