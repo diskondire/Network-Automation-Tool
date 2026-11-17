@@ -1,0 +1,66 @@
+name: Release v0.8 USB (Windows x64)
+
+on:
+  push:
+    branches:
+      - release/v0.8.0-alpha.1
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    name: Windows syntax and regression tests
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+      - name: Install requirements
+        run: python -m pip install -r requirements.txt
+      - name: Compile Python source
+        run: python -m compileall -q console_capture.py core.py discovery.py word_export.py ui_theme.py capture_catalog.py app_config.py tools/build_usb.py
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+
+  package-and-publish:
+    name: Build offline USB ZIP and GitHub prerelease
+    needs: verify
+    if: ${{ hashFiles('.release-ready') != '' }}
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+      - name: Build offline USB bundle
+        run: python tools/build_usb.py --output ConsoleCapture_v0.8.0_USB.zip
+      - name: Upload USB build as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ConsoleCapture_v0.8.0_USB
+          path: ConsoleCapture_v0.8.0_USB.zip
+          if-no-files-found: error
+      - name: Preserve v0.7 history and publish v0.8 prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          gh release view v0.7.7.0-alpha.2 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create v0.7.7.0-alpha.2 --target cf6f820b9e0a3aed14e07c4c75972a48de5643d1 --title "Console Capture 0.7.7.0 alpha (historical)" --notes "Historical source snapshot before the USB/dark-mode work. Source-only prerelease." --prerelease
+            if ($LASTEXITCODE -ne 0) { throw 'Could not create historical v0.7 release.' }
+          }
+          gh release view v0.8.0-alpha.1 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload v0.8.0-alpha.1 ConsoleCapture_v0.8.0_USB.zip --clobber
+          } else {
+            gh release create v0.8.0-alpha.1 ConsoleCapture_v0.8.0_USB.zip --target $env:GITHUB_SHA --title "Console Capture v0.8.0 Alpha - Offline USB Edition" --notes-file docs/RELEASE_0_8.md --prerelease
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'Release publishing failed.' }
