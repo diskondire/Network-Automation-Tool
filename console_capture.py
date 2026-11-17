@@ -1,4 +1,4 @@
-"""Console Capture v0.7.7.0 alpha preview — operator workspace and Word evidence reports."""
+"""Console Capture v0.7.8.0 alpha — serial and verified SSH terminal sessions."""
 import ctypes
 import json
 import os
