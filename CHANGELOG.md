@@ -1,4 +1,5 @@
 ## v0.7.7.0-alpha.2 (unreleased)
+- Fixed Command Set Editor controls: permanently visible Save/Add/Delete/Close footer, direct Add/Edit/Remove command buttons, and window-size-aware editor sizing.
 - Redesigned target-port field to appear only for interface-specific commands.
 - Added single-command evidence under an existing command set and a multi-device capture option.
 - Removed redundant native menu; retained the graphic Windows-style ribbon.
