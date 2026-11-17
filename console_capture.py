@@ -422,6 +422,7 @@ class App:
         single_panel=ttk.LabelFrame(right,text='SINGLE COMMAND',padding=9,style='Report.TLabelframe')
         single_panel.pack(fill='x',pady=(0,9))
         self.single=tk.StringVar(value='display version')
+        self.single.trace_add('write',lambda *_:self.update_target_visibility())
         self.single_entry=ttk.Entry(single_panel,textvariable=self.single,width=28)
         self.single_entry.pack(fill='x',pady=(0,6))
         ttk.Label(single_panel,text='Save capture under command set',style='Counter.TLabel').pack(anchor='w')
@@ -997,6 +998,7 @@ class App:
             return
         group=next((g for g in self.groups if g['name']==self.group_name.get()),None)
         needed=bool(group and any('{interface}' in command for command in group.get('commands',[])))
+        needed=needed or ('{interface}' in self.single.get() if hasattr(self,'single') else False)
         if needed:
             if not self.target_frame.winfo_manager():
                 self.target_frame.pack(fill='x',before=self.group_box.master,pady=(0,9))
