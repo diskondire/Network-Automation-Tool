@@ -1,4 +1,4 @@
-## v7.7.0 preview (unreleased)
+## v0.7.7.0-alpha.2 (unreleased)
 - Fixed the Word export dialog action bar: Export selected captures and Cancel now remain visible at the bottom, with a scrollable capture/template form and screen-height-aware window sizing.
 - Added a classic Windows-style icon ribbon, application logo, Devices/Captures sidebar, per-device status indicator, and actionable home screen.
 - All toolbar shortcuts invoke existing application commands; native menus remain accessible.
@@ -10,9 +10,9 @@
 - Made the Word export picker searchable by hostname, port, command set, date and status.
 - Word export gracefully falls back to standard reports when no optional template is bundled.
 - Added unit tests, a Windows Actions verification workflow and an operator acceptance checklist.
-- Preserved v7.6.4 COM probing, command execution, screenshot generation and Word export behavior.
+- Preserved v0.7.6.4 COM probing, command execution, screenshot generation and Word export behavior.
 
-## v7.6.4
+## v0.7.6.4
 - Combined Word reports: one inventory table with multiple device rows, repeated evidence tables per device.
 - Date display: DD-MM-YY (HH:MM).
 - Removed redundant shortcut toolbar in favor of native Windows menus.
