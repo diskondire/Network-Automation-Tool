@@ -1578,83 +1578,182 @@ class App:
         messagebox.showinfo(f'Command Preview - {name}', preview)
 
     def edit_groups(self):
-        """Edit one command per line, directly in the large editor.
+        """Non-modal command-set editor with a permanently visible action footer.
 
-        This dialog is deliberately non-modal: device terminal tabs stay
-        interactive while command sets are being reviewed or edited.
+        Direct multiline editing is the source of truth: one command per line.
+        Toolbar helpers add/locate lines; Save validates all lines before writing.
         """
-        win=tk.Toplevel(self.root)
+        win = tk.Toplevel(self.root)
         win.title('Command Set Editor')
-        win.geometry('780x640')
-        win.minsize(590,430)
+        height = max(480, min(670, win.winfo_screenheight() - 120))
+        win.geometry(f'780x{height}')
+        win.minsize(590, 460)
         win.transient(self.root)
-        panel=ttk.Frame(win,padding=12)
-        panel.pack(fill='both',expand=True)
-        ttk.Label(panel,text='COMMAND SET EDITOR',style='SectionTitle.TLabel').pack(anchor='w')
-        ttk.Label(panel,text='Select a set or create a new one. Edit commands directly below: one command per line.').pack(anchor='w',pady=(4,10))
-        picker=ttk.Combobox(panel,values=[g['name'] for g in self.groups],state='readonly')
-        picker.pack(fill='x',pady=(0,10))
-        ttk.Label(panel,text='Set name').pack(anchor='w')
-        name=tk.StringVar()
-        ttk.Entry(panel,textvariable=name).pack(fill='x',pady=(3,9))
-        ttk.Label(panel,text='Commands  ·  one per line').pack(anchor='w')
-        body=ttk.Frame(panel);body.pack(fill='both',expand=True,pady=(4,8))
-        scrollbar=ttk.Scrollbar(body)
-        scrollbar.pack(side='right',fill='y')
-        editor=tk.Text(body,font=('Consolas',11),undo=True,wrap='none',
-                       yscrollcommand=scrollbar.set,tabs=('28c',))
-        editor.pack(side='left',fill='both',expand=True)
+        # Reserve the action bar before allocating space to the editor.
+        footer = ttk.Frame(win, padding=(12, 10, 12, 10))
+        footer.pack(side='bottom', fill='x')
+        ttk.Separator(win).pack(side='bottom', fill='x')
+        panel = ttk.Frame(win, padding=(12, 12, 12, 7))
+        panel.pack(side='top', fill='both', expand=True)
+
+        ttk.Label(panel, text='COMMAND SET EDITOR',
+                  style='SectionTitle.TLabel').pack(anchor='w')
+        ttk.Label(panel, text='Choose a command set, or add a new set. One command per line.',
+                  wraplength=700).pack(anchor='w', pady=(4, 8))
+        picker = ttk.Combobox(panel,
+                              values=[g['name'] for g in self.groups],
+                              state='readonly')
+        picker.pack(fill='x', pady=(0, 9))
+        ttk.Label(panel, text='Command set name').pack(anchor='w')
+        name = tk.StringVar()
+        ttk.Entry(panel, textvariable=name).pack(fill='x', pady=(3, 8))
+        ttk.Label(panel, text='Commands — edit directly in the box',
+                  style='SectionTitle.TLabel').pack(anchor='w')
+
+        # The text area is the only expanding region, not the action row.
+        body = ttk.Frame(panel)
+        body.pack(fill='both', expand=True, pady=(4, 6))
+        scrollbar = ttk.Scrollbar(body)
+        scrollbar.pack(side='right', fill='y')
+        editor = tk.Text(body, font=('Consolas', 11), undo=True,
+                         wrap='none', height=8, yscrollcommand=scrollbar.set)
+        editor.pack(side='left', fill='both', expand=True)
         scrollbar.configure(command=editor.yview)
-        ttk.Label(panel,text='Tip: Huawei filters may use patterns such as | i (Serial|Model). Commands run individually, in order.',
-                  wraplength=700).pack(anchor='w',pady=(0,10))
-        editing={'name':None}
+
+        line_tools = ttk.Frame(panel)
+        line_tools.pack(fill='x', pady=(0, 4))
+        ttk.Label(panel,
+                  text='Add inserts a line. Edit jumps to the selected line. '
+                       'Save writes all non-empty lines in their displayed order.',
+                  wraplength=700).pack(anchor='w', pady=(1, 5))
+        editing = {'name': None}
+
         def load(event=None):
-            group=next((g for g in self.groups if g['name']==picker.get()),None)
-            if not group:return
-            editing['name']=group['name']
+            group = next((g for g in self.groups if g['name'] == picker.get()), None)
+            if not group:
+                return
+            editing['name'] = group['name']
             name.set(group['name'])
-            editor.delete('1.0','end')
-            editor.insert('1.0','\n'.join(group['commands']))
-        picker.bind('<<ComboboxSelected>>',load)
+            editor.delete('1.0', 'end')
+            editor.insert('1.0', '\n'.join(group['commands']))
+
+        picker.bind('<<ComboboxSelected>>', load)
+
         def new_group():
-            editing['name']=None
+            editing['name'] = None
             picker.set('')
             name.set('')
-            editor.delete('1.0','end')
+            editor.delete('1.0', 'end')
             editor.focus_set()
+
+        def add_command():
+            # Enter directly into a newly inserted line, with no separate input.
+            line = editor.index('insert').split('.')[0]
+            if not editor.get('1.0', 'end-1c').strip():
+                editor.mark_set('insert', '1.0')
+            else:
+                editor.insert(f'{line}.end', '\n')
+            editor.focus_set()
+            editor.see('insert')
+
+        def edit_command():
+            # Tk text is already directly editable; move focus to the clicked line.
+            editor.focus_set()
+            editor.mark_set('insert', f"{editor.index('insert').split('.')[0]}.0")
+            editor.see('insert')
+
+        def remove_line():
+            line = editor.index('insert').split('.')[0]
+            editor.delete(f'{line}.0', f'{line}.0 lineend +1c')
+            editor.focus_set()
+
         def save_group():
-            title=name.get().strip()
-            commands=[line.strip() for line in editor.get('1.0','end-1c').splitlines() if line.strip()]
+            title = name.get().strip()
+            commands = [line.strip()
+                        for line in editor.get('1.0', 'end-1c').splitlines()
+                        if line.strip()]
             if not title or not commands:
-                messagebox.showwarning('Command sets','Provide a name and at least one command.',parent=win)
+                messagebox.showwarning('Command sets',
+                                       'Provide a name and at least one command.',
+                                       parent=win)
                 return
-            if any(g['name']==title and g['name']!=editing['name'] for g in self.groups):
-                messagebox.showerror('Command sets','This name already exists.',parent=win)
+            if any(g['name'].casefold() == title.casefold()
+                   and g['name'] != editing['name'] for g in self.groups):
+                messagebox.showerror('Command sets', 'This name already exists.',
+                                     parent=win)
                 return
             try:
-                for command in commands:
-                    command_text(command,{'interface':'MultiGE 1/0/1'})
+                for line_no, command in enumerate(commands, 1):
+                    try:
+                        command_text(command, {'interface': 'MultiGE 1/0/1'})
+                    except ValueError as exc:
+                        raise ValueError(f'Command {line_no}: {exc}') from exc
             except ValueError as exc:
-                messagebox.showerror('Command sets',str(exc),parent=win)
+                messagebox.showerror('Command sets', str(exc), parent=win)
                 return
-            self.groups=[g for g in self.groups if g['name']!=editing['name']]
-            self.groups.append({'name':title,'target':'Any','commands':commands})
-            self.persist()
-            self.refresh_groups()
-            win.destroy()
-        def delete_group():
-            if editing['name'] and messagebox.askyesno('Delete command set',
-                    'Delete '+editing['name']+'?',parent=win):
-                self.groups=[g for g in self.groups if g['name']!=editing['name']]
+
+            # Preserve the existing set position instead of moving it to the end.
+            original = editing['name']
+            if original is not None:
+                index = next((i for i, g in enumerate(self.groups)
+                              if g['name'] == original), None)
+            else:
+                index = None
+            previous = list(self.groups)
+            updated = {'name': title, 'target': 'Any', 'commands': commands}
+            if index is None:
+                self.groups.append(updated)
+            else:
+                self.groups[index] = updated
+            try:
                 self.persist()
-                self.refresh_groups()
-                win.destroy()
-        row=ttk.Frame(panel);row.pack(fill='x')
-        ttk.Button(row,text='New set',command=new_group).pack(side='left')
-        ttk.Button(row,text='Delete set',command=delete_group).pack(side='left',padx=8)
-        ttk.Button(row,text='Close',command=win.destroy).pack(side='right')
-        ttk.Button(row,text='Save changes',command=save_group,
-                   style='Primary.Action.TButton').pack(side='right',padx=(0,8))
+            except Exception as exc:
+                self.groups = previous
+                messagebox.showerror('Command sets', 'Saving failed: ' + str(exc),
+                                     parent=win)
+                return
+            editing['name'] = title
+            picker['values'] = [g['name'] for g in self.groups]
+            picker.set(title)
+            self.refresh_groups()
+            self.group_name.set(title)
+            self.update_target_visibility()
+            messagebox.showinfo('Command sets', f'Saved {len(commands)} command(s) in "{title}".',
+                                parent=win)
+
+        def delete_group():
+            original = editing['name']
+            if not original:
+                return
+            if not messagebox.askyesno('Delete command set',
+                                       f'Delete "{original}"?', parent=win):
+                return
+            previous = list(self.groups)
+            self.groups = [g for g in self.groups if g['name'] != original]
+            try:
+                self.persist()
+            except Exception as exc:
+                self.groups = previous
+                messagebox.showerror('Command sets', 'Deleting failed: ' + str(exc),
+                                     parent=win)
+                return
+            self.refresh_groups()
+            picker['values'] = [g['name'] for g in self.groups]
+            new_group()
+
+        ttk.Button(line_tools, text='+ Add command', command=add_command).pack(side='left')
+        ttk.Button(line_tools, text='Edit command', command=edit_command).pack(
+            side='left', padx=6)
+        ttk.Button(line_tools, text='Remove line', command=remove_line).pack(side='left')
+
+        ttk.Button(footer, text='Add new set', command=new_group).pack(side='left')
+        ttk.Button(footer, text='Delete set', command=delete_group).pack(
+            side='left', padx=(8, 0))
+        ttk.Button(footer, text='Close', command=win.destroy).pack(
+            side='right', padx=(8, 0))
+        ttk.Button(footer, text='Save changes', command=save_group,
+                   style='Primary.Action.TButton').pack(side='right')
+
         if self.groups:
             picker.current(0)
             load()
